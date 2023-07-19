@@ -1,0 +1,17 @@
+[tool.poetry]
+name = "dep-graph-viz"
+version = "0.1.0"
+description = "visualize a dependency graph for a python library"
+authors = ["mivanit <mivanits@umich.edu>"]
+license = "GPL-3.0"
+readme = "README.md"
+packages = [{include = "dep_graph_viz"}]
+
+[tool.poetry.dependencies]
+python = "^3.11"
+networkx = "^3.1"
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
