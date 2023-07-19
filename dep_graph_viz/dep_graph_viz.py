@@ -12,6 +12,7 @@ from networkx.drawing.nx_pydot import to_pydot
 
 
 CONFIG: dict[str, Any] = {
+    "url_prefix": None,
     "edge": {
         "hierarchy": {
             "color": "black",
@@ -91,12 +92,19 @@ def build_graph(python_files: list[str], root: str) -> nx.DiGraph:
     G: nx.MultiDiGraph = nx.MultiDiGraph()
     module_names: list[str] = process_imports(python_files, root=root)
     for python_file, module_name in zip(python_files, module_names):
-
+        python_file_rel: str = module_name.replace(".", "/")
         # Add node for module, with rank based on depth in hierarchy
         if "__init__" in python_file:
             G.add_node(module_name, rank=module_name.count("."), **CONFIG["node"]["dir"])
         else:
             G.add_node(module_name, rank=module_name.count("."), **CONFIG["node"]["file"])
+            python_file_rel += ".py"
+
+        # add url
+        if CONFIG["url_prefix"] is not None:
+            # need to put quotes here because otherwise pydot throws:
+            # ValueError: Node names and attributes should not contain ":" unless they are quoted with ""
+            G.nodes[module_name]["URL"] = f'"{CONFIG["url_prefix"]}{python_file_rel}"'
         
         # Read source code
         with open(python_file, "r", encoding="utf-8") as f:
