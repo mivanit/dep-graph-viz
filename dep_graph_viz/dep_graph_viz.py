@@ -28,11 +28,11 @@ def process_imports(imports: list[str], root: str) -> list[str]:
             x
             .replace("/", ".").replace("\\", ".") # turn path into module
             # remove root except the last part
-			.removeprefix(".".join(
-				root
-				.replace("/", ".").replace("\\", ".")
-				.split(".")[:-1]
-			))
+            .removeprefix(".".join(
+                root
+                .replace("/", ".").replace("\\", ".")
+                .split(".")[:-1]
+            ))
             .removesuffix(".py") # remove extension
             .removeprefix(".") # ???
             .removesuffix(".__init__") # init becomes the module name
@@ -44,7 +44,6 @@ def build_graph(python_files: list[str], root: str) -> nx.DiGraph:
     """Build a directed graph where nodes represent modules and edges represent dependencies"""
     G: nx.MultiDiGraph = nx.MultiDiGraph()
     module_names: list[str] = process_imports(python_files, root=root)
-    print(module_names)
     for python_file, module_name in zip(python_files, module_names):
 
         # Add node for module, with rank based on depth in hierarchy
@@ -92,17 +91,25 @@ def get_python_files(root: str) -> list[str]:
 
 
 def main(
-		root: str, 
+        root: str, 
         output: str, 
         output_fmt: Literal["svg", "png"] = "svg",
         
-	) -> None:
+    ) -> None:
     """Main function to generate a DOT file representing module dependencies"""
+    print("# getting python files...")
     python_files: list[str] = get_python_files(root)
+    print(f"\t found {len(python_files)} python files")
+    print("# building graph...")
     G = build_graph(python_files, root)
+    print(f"\t built graph with {len(G.nodes)} nodes and {len(G.edges)} edges")
+    
     output_file_dot: str = f"{output}.dot"
+    print(f"# writing dot file: {output_file_dot}")
     write_dot(G, f"{output_file_dot}")
+    print(f"# writing {output_fmt} file: {output}.{output_fmt}")
     os.system(f"dot -T{output_fmt} {output_file_dot} -o {output}.{output_fmt}")
+    print("# done!")
 
 
 if __name__ == "__main__":
