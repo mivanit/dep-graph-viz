@@ -10,6 +10,8 @@ packages = [{include = "dep_graph_viz"}]
 [tool.poetry.dependencies]
 python = "^3.11"
 networkx = "^3.1"
+pydot = "^1.4.2"
+muutils = "^0.5.0"
 
 
 [build-system]
