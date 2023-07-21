@@ -12,6 +12,7 @@ python = "^3.11"
 networkx = "^3.1"
 pydot = "^1.4.2"
 muutils = "^0.5.0"
+fire = ">=0.4.0"
 
 
 [build-system]
