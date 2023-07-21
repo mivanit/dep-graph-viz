@@ -14,6 +14,8 @@ from networkx.drawing.nx_pydot import to_pydot
 
 CONFIG: dict[str, Any] = {
     "url_prefix": None,
+    "auto_url_format": "{git_remote_url}/tree/{git_branch}/",
+    "auto_url_replace": {".git": ""},
     "edge": {
         "hierarchy": {
             "color": "black",
@@ -67,14 +69,16 @@ def _process_config(root: str, url_from_git: bool) -> None:
                     "git remote get-url origin",
                     shell=True,
                     encoding="utf-8",
-                ).strip().rstrip("/").replace(".git", "")
+                ).strip().rstrip("/")
+                for rep_key, rep_val in CONFIG["auto_url_replace"].items():
+                    git_remote_url = git_remote_url.replace(rep_key, rep_val)
                 # get branch
                 git_branch: str = subprocess.check_output(
                     "git rev-parse --abbrev-ref HEAD",
                     shell=True,
                     encoding="utf-8",
                 ).strip()
-                CONFIG["url_prefix"] = f"{git_remote_url}/tree/{git_branch}/"
+                CONFIG["url_prefix"] = CONFIG["auto_url_format"].format(git_remote_url=git_remote_url, git_branch=git_branch)
             except subprocess.CalledProcessError as e:
                 print(f"could not get git info, not adding URLs: {e}")
                 CONFIG["url_prefix"] = None
