@@ -48,7 +48,7 @@ CONFIG: dict[str, Any] = {
     },
 }
 
-def _process_config(root: str, url_from_git: bool) -> None:
+def _process_config(root: str|None) -> None:
     """converts none types, auto-detects url_prefix from git if needed"""
     global CONFIG
     for key, value in CONFIG["edge"].items():
@@ -58,8 +58,7 @@ def _process_config(root: str, url_from_git: bool) -> None:
         if isinstance(value, str) and value.lower() in ["none", "null"]:
             CONFIG["node"][key] = None
 
-    if CONFIG["url_prefix"] is None:
-        if url_from_git:
+    if (CONFIG["url_prefix"] is None) and (CONFIG["auto_url_format"] is not None) and (root is not None):
             try:
                 # navigate to root
                 orig_dir: str = os.getcwd()
@@ -181,41 +180,63 @@ def get_python_files(root: str) -> list[str]:
 
 
 def main(
-        root: str, 
-        output: str, 
+        root: str|None = None,
+        output: str = "output",
         output_fmt: Literal["svg", "png"] = "svg",
         config_file: str | None = None,
         print_cfg: bool = False,
         verbose: bool = False,
-        url_from_git: bool = True,
         **kwargs,
     ) -> None:
-    """Main function to generate a DOT file representing module dependencies
+    """Main function to generate and render a graphviz DOT file representing module dependencies
     
-    # Positional/keyword arguments
-    - `root: str`
+    # Positional or keyword arguments
+    - `root: str` (REQUIRED)
         root directory to search for Python files
     - `output: str`
         output filename (without extension)
+        default: `"output"`
     - `output_fmt: Literal["svg", "png"]`
         output format for running `dot`
+        default: `"svg"`
 
     # Keyword-only arguments
     - `config_file: str | None = None`
-        path to a JSON file containing configuration
+        path to a JSON file containing configuration options
     - `print_cfg: bool = False`
         whether to print the configuration after loading it -- if this is set, the program will exit after printing the config
     - `verbose: bool = False`
     - `h` or `help`
-        print this help message
+        print this help message and exit
     
     # Configuration options
     either specify these in a json file, or separate levels with a dot. set to `None` to disable.
-    - `node.dir` kwargs for directory nodes
-    - `node.file` kwargs for file nodes
-    - `edge.heirarchy` kwargs for hierarchy edges (i.e. file A is part of module B)
-    - `edge.uses` kwargs for uses edges (i.e. file A imports module B for using it)
-    - `edge.inits` kwargs for init edges (i.e. __init__.py file imports something from downstream of itself)
+    - `url_prefix: str|None`
+        manually add a prefix to the url. if set to `None`, will try to auto-detect from git
+    - `auto_url_format: str|None` 
+        how to format a url given the git remote url and branch name.
+        default: "{git_remote_url}/tree/{git_branch}/" (which works for github)
+        set to `None` to disable. if both this and `url_prefix` are none, the svg will not have URLs
+    - `auto_url_replace: dict[str,str]`
+        string-replace pairs to apply to the git remote url before formatting it
+        note: trailing slashes are also stripped
+        default: `{".git": ""}`
+    - `node.dir: dict|None` 
+        kwargs for directory nodes
+    - `node.file: dict|None` 
+        kwargs for file nodes
+    - `edge.heirarchy: dict|None` 
+        kwargs for hierarchy edges (i.e. file A is part of module B)
+    - `edge.uses: dict|None` 
+        kwargs for uses edges (i.e. file A imports module B for using it)
+    - `edge.inits: dict|None` 
+        kwargs for init edges (i.e. __init__.py file imports something from downstream of itself)
+
+    To modify an element of a dict without specifying the whole dict, you can use "." as a level separator:
+    ```
+    --edge.uses.color=green
+    ```
+
     """
 
     if config_file is not None:
@@ -228,7 +249,7 @@ def main(
             kwargs_to_nested_dict(kwargs, transform_key=lambda x: x.lstrip("-"), sep="."),
         )
 
-    _process_config(root=root, url_from_git=url_from_git)
+    _process_config(root=root)
 
     if "h" in CONFIG or "help" in CONFIG:
         print(main.__doc__)
@@ -239,6 +260,9 @@ def main(
     if print_cfg:
         print(json.dumps(CONFIG, indent=2))
         exit()
+    
+    if root is None:
+        raise ValueError("root is required")
 
     print("# getting python files...")
     python_files: list[str] = get_python_files(root)
