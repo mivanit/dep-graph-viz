@@ -3,6 +3,7 @@ import glob
 import os
 import json
 from pathlib import Path
+import subprocess
 from typing import Literal, Any
 
 from muutils.dictmagic import update_with_nested_dict, kwargs_to_nested_dict
@@ -45,7 +46,8 @@ CONFIG: dict[str, Any] = {
     },
 }
 
-def _process_config() -> None:
+def _process_config(root: str, url_from_git: bool) -> None:
+    """converts none types, auto-detects url_prefix from git if needed"""
     global CONFIG
     for key, value in CONFIG["edge"].items():
         if isinstance(value, str) and value.lower() in ["none", "null"]:
@@ -53,6 +55,31 @@ def _process_config() -> None:
     for key, value in CONFIG["node"].items():
         if isinstance(value, str) and value.lower() in ["none", "null"]:
             CONFIG["node"][key] = None
+
+    if CONFIG["url_prefix"] is None:
+        if url_from_git:
+            try:
+                # navigate to root
+                orig_dir: str = os.getcwd()
+                os.chdir(root)
+                # get git remote url
+                git_remote_url: str = subprocess.check_output(
+                    "git remote get-url origin",
+                    shell=True,
+                    encoding="utf-8",
+                ).strip().rstrip("/").replace(".git", "")
+                # get branch
+                git_branch: str = subprocess.check_output(
+                    "git rev-parse --abbrev-ref HEAD",
+                    shell=True,
+                    encoding="utf-8",
+                ).strip()
+                CONFIG["url_prefix"] = f"{git_remote_url}/tree/{git_branch}/"
+            except subprocess.CalledProcessError as e:
+                print(f"could not get git info, not adding URLs: {e}")
+                CONFIG["url_prefix"] = None
+            finally:
+                os.chdir(orig_dir)
 
 
 def get_imports(source_code: str) -> list[str]:
@@ -156,6 +183,7 @@ def main(
         config_file: str | None = None,
         print_cfg: bool = False,
         verbose: bool = False,
+        url_from_git: bool = True,
         **kwargs,
     ) -> None:
     """Main function to generate a DOT file representing module dependencies
@@ -196,7 +224,7 @@ def main(
             kwargs_to_nested_dict(kwargs, transform_key=lambda x: x.lstrip("-"), sep="."),
         )
 
-    _process_config()
+    _process_config(root=root, url_from_git=url_from_git)
 
     if "h" in CONFIG or "help" in CONFIG:
         print(main.__doc__)
