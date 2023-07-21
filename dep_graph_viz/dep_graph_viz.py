@@ -231,6 +231,10 @@ def main(
         kwargs for uses edges (i.e. file A imports module B for using it)
     - `edge.inits: dict|None` 
         kwargs for init edges (i.e. __init__.py file imports something from downstream of itself)
+    - `dot_attrs: dict`
+        kwargs for the dot graph itself
+        default: `{'rankdir': 'TB'}` (top to bottom)
+        you can change it via `dot_attrs.rankdir=LR` for left to right, etc.
 
     To modify an element of a dict without specifying the whole dict, you can use "." as a level separator:
     ```

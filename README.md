@@ -3,7 +3,6 @@
 visualize a dependency graph for a python library
 
 ![](examples/maze-dataset.svg)
-![](examples/muutils.svg)
 
 Given a python library (or any folder of python files), create a graph of the dependencies between the modules. By default:
 
@@ -11,6 +10,9 @@ Given a python library (or any folder of python files), create a graph of the de
 - imports between files are red arrows
 - imports in an `__init__.py` from a downstream file are dashed blue arrows
 
+The script also lets the git remote url be auto-detected, making all the nodes in the graph into clickable links (for svg, at least)
+
+![](examples/muutils.svg)
 
 # Usage
 
@@ -67,6 +69,10 @@ Either specify these in a json file, or separate levels with a dot.
 	kwargs for uses edges (i.e. file A imports module B for using it)
 - `edge.inits: dict|None` 
 	kwargs for init edges (i.e. __init__.py file imports something from downstream of itself)
+- `dot_attrs: dict`
+    kwargs for the dot graph itself
+    default: `{'rankdir': 'TB'}` (top to bottom)
+    you can change it via `dot_attrs.rankdir=LR` for left to right, etc.
 
 To modify an element of a dict without specifying the whole dict, you can use "." as a level separator:
 ```
