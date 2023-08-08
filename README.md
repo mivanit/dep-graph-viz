@@ -14,6 +14,8 @@ The script also lets the git remote url be auto-detected, making all the nodes i
 
 ![](examples/muutils.svg)
 
+(you can view more examples in the [examples](https://github.com/mivanit/dep-graph-viz/tree/main/examples) folder)
+
 # Usage
 
 To generate a graph:
