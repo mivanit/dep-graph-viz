@@ -34,7 +34,11 @@ CONFIG: dict[str, Any] = {
         },
     },
     "node": {
-        "module": {
+        "root": {
+            "shape": "folder",
+            "color": "purple",
+        },
+        "module_dir": {
             "shape": "folder",
             "color": "black",
         },
@@ -42,9 +46,13 @@ CONFIG: dict[str, Any] = {
             "shape": "folder",
             "color": "blue",
         },
-        "file": {
+        "module_file": {
             "shape": "note",
             "color": "black",
+        },
+        "script": {
+            "shape": "note",
+            "color": "green",
         },
     },
     "dot_attrs": {
@@ -109,71 +117,109 @@ def get_imports(source_code: str) -> list[str]:
             imports.append(node.module)
     return imports
 
+def get_relevant_directories(root: str) -> set[str]:
+    """Get all directories containing Python files and their parent directories up to the root."""
+    directories_with_py_files: set[str] = {os.path.dirname(file) for file in get_python_files(root)}
+    all_directories: set[str] = set(directories_with_py_files)
+    
+    for directory in directories_with_py_files:
+        while directory and directory != root:
+            parent_directory = os.path.dirname(directory)
+            if parent_directory and parent_directory != directory:
+                all_directories.add(parent_directory)
+            directory = parent_directory
+
+    all_directories.add(root)  # Ensure the root directory is included
+    return all_directories
+
+def path_to_module(path: str) -> str:
+    return path.replace("/", ".").replace("\\", ".")
+
 def process_imports(imports: list[str], root: str) -> list[str]:
     return [
         (
             x
-            .replace("/", ".").replace("\\", ".") # turn path into module
-            # remove root except the last part
+            .replace("/", ".").replace("\\", ".")  # Turn path into module
             .removeprefix(".".join(
                 root
                 .replace("/", ".").replace("\\", ".")
                 .split(".")[:-1]
             ))
-            .removesuffix(".py") # remove extension
-            .removeprefix(".") # ???
-            .removesuffix(".__init__") # init becomes the module name
+            .removesuffix(".py")  # Remove extension
+            .removeprefix(".")  # ???
+            .removesuffix(".__init__")  # init becomes the module name
         )
         for x in imports
     ]
 
-def build_graph(python_files: list[str], root: str) -> nx.DiGraph:
-    """Build a directed graph where nodes represent modules and edges represent dependencies"""
+def classify_node(path: str, root: str) -> str:
+    """Classify a node as script, module_file, module_dir, dir, or root."""
+    if path == root:
+        return 'root'
+    if path.endswith('.py'):
+        if '__init__.py' in path:
+            return 'module_dir'
+        return 'module_file' if os.path.dirname(path).startswith(root) else 'script'
+    return 'dir'
+
+def add_node(G: nx.MultiDiGraph, node_name: str, node_type: str, url: str = None) -> None:
+    """Add a node to the graph with the given type and optional URL."""
+    if node_name not in G:
+        G.add_node(node_name, rank=node_name.count("."), **CONFIG["node"][node_type])
+        if url:
+            G.nodes[node_name]["URL"] = f'"{url}"'
+
+
+
+def build_graph(python_files: list[str], root: str) -> nx.MultiDiGraph:
+    """Build a directed graph where nodes represent modules and edges represent dependencies."""
     G: nx.MultiDiGraph = nx.MultiDiGraph()
     module_names: list[str] = process_imports(python_files, root=root)
-    for python_file, module_name in zip(python_files, module_names):
-        python_file_rel: str = module_name.replace(".", "/")
-        # Add node for module, with rank based on depth in hierarchy
-        if "__init__" in python_file:
-            G.add_node(module_name, rank=module_name.count("."), **CONFIG["node"]["module"])
-        else:
-            G.add_node(module_name, rank=module_name.count("."), **CONFIG["node"]["file"])
-            python_file_rel += ".py"
+    directories: Set[str] = get_relevant_directories(root)
 
-        # add url
-        if CONFIG["url_prefix"] is not None:
-            # need to put quotes here because otherwise pydot throws:
-            # ValueError: Node names and attributes should not contain ":" unless they are quoted with ""
-            G.nodes[module_name]["URL"] = f'"{CONFIG["url_prefix"]}{python_file_rel}"'
+    # Add nodes for directories and root
+    for directory in directories:
+        node_type = classify_node(directory, root)
+        dir_module_name = directory.replace("/", ".").replace("\\", ".").removeprefix(root.replace("/", ".").replace("\\", ".") + ".")
+        add_node(G, dir_module_name, node_type)
+
+    for python_file in python_files:
+        module_name = process_imports([python_file], root=root)[0]
+        python_file_rel: str = python_file.replace(root, "").lstrip(os.sep).replace(os.sep, "/")
+        node_type = classify_node(python_file, root)
         
+        # Add node for module or script
+        node_key = module_name if node_type != 'script' else python_file_rel
+        add_node(G, node_key, node_type, f"{CONFIG['url_prefix']}{python_file_rel}" if CONFIG["url_prefix"] else None)
+
         # Read source code
         with open(python_file, "r", encoding="utf-8") as f:
             source_code: str = f.read()
-        
-        # get hierarchy
-        module_parents: list[str] = [
-            x for x in module_names
-            if x != module_name and module_name.startswith(x)
-        ]
-        if module_parents:
-            module_parent: str = sorted(module_parents, key=len)[-1]
-            if CONFIG["edge"]["hierarchy"] is not None:
-                G.add_edge(module_parent, module_name, **CONFIG["edge"]["hierarchy"])
+
+        # Get hierarchy
+        if node_type == 'module_file' or node_type == 'module_dir':
+            module_parents: list[str] = [
+                x for x in list(G.nodes)
+                if x != module_name and module_name.startswith(x)
+            ]
+            if module_parents:
+                module_parent: str = sorted(module_parents, key=len)[-1]
+                if CONFIG["edge"]["hierarchy"]:
+                    G.add_edge(module_parent, module_name, **CONFIG["edge"]["hierarchy"])
 
         # Get imports
         imported_modules: list[str] = get_imports(source_code)
         for imported_module in imported_modules:
-            # Check if imported module exists
-            if imported_module in module_names:
-                # Add edge for import, with label and color
-                if "__init__" in python_file:
-                    if CONFIG["edge"]["inits"] is not None:
-                        G.add_edge(module_name, imported_module, **CONFIG["edge"]["inits"])
-                else:
-                    if CONFIG["edge"]["uses"] is not None:
-                        G.add_edge(module_name, imported_module, **CONFIG["edge"]["uses"])
-                
+            # Convert import to module name
+            imported_module_name = imported_module.replace("/", ".").replace("\\", ".")
+            if imported_module_name in G:
+                edge_type = "inits" if node_type == 'module_dir' else "uses"
+                if CONFIG["edge"].get(edge_type):
+                    G.add_edge(node_key, imported_module_name, **CONFIG["edge"][edge_type])
+
     return G
+
+
 
 
 def write_dot(G: nx.DiGraph, output_filename: str) -> None:
@@ -286,7 +332,6 @@ def main(
     print("# getting python files...")
     python_files: list[str] = get_python_files(root)
     print(f"\t found {len(python_files)} python files")
-    print(python_files)
     
     print("# building graph...")
     G: nx.MultiDiGraph = build_graph(python_files, root)
