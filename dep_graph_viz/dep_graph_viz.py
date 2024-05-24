@@ -17,14 +17,19 @@ CONFIG: dict[str, Any] = {
     "auto_url_format": "{git_remote_url}/tree/{git_branch}/",
     "auto_url_replace": {".git": ""},
     "edge": {
-        "hierarchy": {
+        "module_hierarchy": {
             "color": "black",
             "penwidth": "3",
             "style": "solid",
         },
+        "hierarchy": {
+            "color": "black",
+            "penwidth": "1",
+            "style": "solid",
+        },
         "uses": {
             "color": "red",
-            "penwidth": "2",
+            "penwidth": "1",
             "style": "solid",
         },
         "inits": {
@@ -133,33 +138,48 @@ def get_relevant_directories(root: str) -> set[str]:
     return all_directories
 
 
+def normalize_path(path: str) -> str:
+    return path.replace("\\", "/")
+
 def path_to_module(path: str) -> str:
-    return path.replace("/", ".").replace("\\", ".")
+    return normalize_path(path).replace("/", ".").removesuffix(".py")
 
 def process_imports(imports: list[str], root: str) -> list[str]:
     root_module_path = root.replace("/", ".").replace("\\", ".")
     return [
         (
-            x
-            .replace("/", ".").replace("\\", ".")
+            path_to_module(x)
             .removeprefix(root_module_path)
-            .removesuffix(".py")  # Remove extension
             .removeprefix(".")  # ???
             .removesuffix(".__init__")  # init becomes the module name
         )
         for x in imports
     ]
 
+NodeTypes = Literal["root", "module_root", "module_dir", "dir", "module_file", "script"]
 
-def classify_node(path: str, root: str) -> str:
-    rel_path = os.path.relpath(path, root)
-    if rel_path == '.':
-        return 'root'
+
+def classify_node(path: str, root: str) -> NodeTypes:
+    path = path.replace("\\", "/")
+    parent_dir: str = os.path.dirname(path)
+    rel_path: str = os.path.relpath(path, root)
     if os.path.isdir(path):
-        return 'module_dir' if '__init__.py' in os.listdir(path) else 'dir'
-    if rel_path.endswith('.py'):
-        return 'module_file'
-    return 'dir'
+        files: list[str] = os.listdir(path)
+        # handle root
+        if rel_path == '.':
+            if '__init__.py' in files:
+                return 'module_root'
+            else:
+                return 'root'
+        else:
+            return 'module_dir' if '__init__.py' in files else 'dir'
+    elif rel_path.endswith('.py'):
+        if '__init__.py' in os.listdir(parent_dir):
+            return 'module_file'
+        else:
+            return 'script'
+    else:
+        raise ValueError(f"unknown path type: {path}")
 
 
 def add_node(G: nx.MultiDiGraph, node_name: str, node_type: str, url: str = None) -> None:
@@ -178,7 +198,7 @@ def build_graph(python_files: list[str], root: str) -> nx.MultiDiGraph:
 
     # Add nodes for directories and root
     for directory in directories:
-        node_type = classify_node(os.path.join(root, directory), root)
+        node_type: str = classify_node(os.path.join(root, directory), root)
         dir_module_name = directory.replace("/", ".").replace("\\", ".")
         add_node(G, dir_module_name, node_type)
 
@@ -281,7 +301,7 @@ def main(
         kwargs for directory nodes
     - `node.file: dict|None` 
         kwargs for file nodes
-    - `edge.heirarchy: dict|None` 
+    - `edge.hierarchy: dict|None` 
         kwargs for hierarchy edges (i.e. file A is part of module B)
     - `edge.uses: dict|None` 
         kwargs for uses edges (i.e. file A imports module B for using it)
