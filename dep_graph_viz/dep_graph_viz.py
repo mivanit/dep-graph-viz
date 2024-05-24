@@ -5,11 +5,68 @@ import json
 from pathlib import Path
 import subprocess
 from typing import Literal, Any
+from dataclasses import dataclass
 
 from muutils.dictmagic import update_with_nested_dict, kwargs_to_nested_dict
 import networkx as nx
 import pydot
 from networkx.drawing.nx_pydot import to_pydot
+
+ROOT: str|None = None
+
+NodeType = Literal["root", "module_root", "module_dir", "dir", "module_file", "script"]
+
+NULL_STRINGS: set[str] = {"none", "null"}
+
+
+def classify_node(path: str, root: str = ROOT) -> NodeType:
+    path = path.replace("\\", "/")
+    parent_dir: str = os.path.dirname(path)
+    rel_path: str = os.path.relpath(path, root)
+    if os.path.isdir(path):
+        files: list[str] = os.listdir(path)
+        # handle root
+        if rel_path == '.':
+            if '__init__.py' in files:
+                return 'module_root'
+            else:
+                return 'root'
+        else:
+            return 'module_dir' if '__init__.py' in files else 'dir'
+    elif rel_path.endswith('.py'):
+        if '__init__.py' in os.listdir(parent_dir):
+            return 'module_file'
+        else:
+            return 'script'
+    else:
+        raise ValueError(f"unknown path type: {path}")
+
+@dataclass
+class Node:
+    path: str
+    display_name: str
+    url: str | None = None
+
+    @property
+    def node_type(self) -> NodeType:
+        return classify_node(self.path)
+
+    @classmethod
+    def get_node(
+            cls,
+            path: str,
+            root: str,
+        ) -> "Node":
+        rel_path: str = os.path.relpath(path, root).replace("\\", "/")
+        node_type: NodeType = classify_node(path, root)
+        display_name: str = path_to_module(rel_path) if node_type != "script" else rel_path
+        
+        url: str|None = None
+        url_prefix: str = CONFIG['url_prefix']
+        if url_prefix:
+            url = f"{url_prefix}{rel_path}"
+        
+        return Node(path=rel_path, display_name=display_name, url=url)
 
 
 CONFIG: dict[str, Any] = {
@@ -69,9 +126,8 @@ CONFIG: dict[str, Any] = {
     },
 }
 
-NULL_STRINGS: set[str] = {"none", "null"}
 
-def _process_config(root: str|None) -> None:
+def _process_config(root: str | None) -> None:
     """converts none types, auto-detects url_prefix from git if needed"""
     global CONFIG
     # convert none/null items
@@ -160,82 +216,50 @@ def process_imports(imports: list[str], root: str) -> list[str]:
         for x in imports
     ]
 
-NodeType = Literal["root", "module_root", "module_dir", "dir", "module_file", "script"]
 
 
-def classify_node(path: str, root: str) -> NodeType:
-    path = path.replace("\\", "/")
-    parent_dir: str = os.path.dirname(path)
-    rel_path: str = os.path.relpath(path, root)
-    if os.path.isdir(path):
-        files: list[str] = os.listdir(path)
-        # handle root
-        if rel_path == '.':
-            if '__init__.py' in files:
-                return 'module_root'
-            else:
-                return 'root'
-        else:
-            return 'module_dir' if '__init__.py' in files else 'dir'
-    elif rel_path.endswith('.py'):
-        if '__init__.py' in os.listdir(parent_dir):
-            return 'module_file'
-        else:
-            return 'script'
-    else:
-        raise ValueError(f"unknown path type: {path}")
 
 
-def add_node(G: nx.MultiDiGraph, node_name: str, node_type: str, url: str = None) -> None:
+def add_node(G: nx.MultiDiGraph, node: Node) -> None:
     """Add a node to the graph with the given type and optional URL."""
-    if node_name not in G:
-        G.add_node(node_name, rank=node_name.count("."), **CONFIG["node"][node_type])
-        if url:
-            G.nodes[node_name]["URL"] = f'"{url}"'
-
-
+    if node.display_name not in G:
+        G.add_node(
+            node.display_name,
+            rank=node.path.count("/"),
+            **CONFIG["node"][node.node_type],
+        )
+        if node.url:
+            G.nodes[node.display_name]["URL"] = f'"{node.url}"'
+    else:
+        raise ValueError(f"node {node.path} already exists in the graph!")
 
 def build_graph(python_files: list[str], root: str) -> nx.MultiDiGraph:
     G: nx.MultiDiGraph = nx.MultiDiGraph()
-    module_names: list[str] = process_imports(python_files, root=root)
     directories: set[str] = get_relevant_directories(root)
 
     # Add nodes for directories and root
     for directory in directories:
-        node_type: NodeType = classify_node(os.path.join(root, directory), root)
-        dir_processed: str = normalize_path(directory)
-        if node_type.startswith('module_'):
-            dir_processed = path_to_module(dir_processed)
-        if node_type.endswith('root'):
-            # TODO: get the name of the root directory
-            dir_processed = "ROOT"
-
-        dir_processed = f'"{dir_processed}"'
-        add_node(G, dir_processed, node_type)
+        node: Node = Node.get_node(os.path.join(root, directory), root)
+        add_node(G, node)
 
     for python_file in python_files:
-        module_name = process_imports([python_file], root=root)[0]
-        python_file_rel: str = os.path.relpath(python_file, root).replace(os.sep, "/")
-        node_type = classify_node(python_file, root)
-        
-        # Add node for module or script
-        node_key = module_name if node_type != 'script' else python_file_rel
-        add_node(G, node_key, node_type, f"{CONFIG['url_prefix']}{python_file_rel}" if CONFIG["url_prefix"] else None)
+        node: Node = Node.get_node(python_file, root)
+        add_node(G, node)
 
         # Read source code
         with open(python_file, "r", encoding="utf-8") as f:
             source_code: str = f.read()
 
         # Get hierarchy
-        if node_type in {'module_file', 'module_dir'}:
+        if classify_node(python_file, root) in {'module_file', 'module_dir'}:
             module_parents: list[str] = [
                 x for x in list(G.nodes)
-                if x != module_name and module_name.startswith(x)
+                if x != node.display_name and node.display_name.startswith(x)
             ]
             if module_parents:
                 module_parent: str = sorted(module_parents, key=len)[-1]
                 if CONFIG["edge"]["hierarchy"]:
-                    G.add_edge(module_parent, module_name, **CONFIG["edge"]["hierarchy"])
+                    G.add_edge(module_parent, node.display_name, **CONFIG["edge"]["hierarchy"])
 
         # Get imports
         imported_modules: list[str] = get_imports(source_code)
@@ -243,9 +267,9 @@ def build_graph(python_files: list[str], root: str) -> nx.MultiDiGraph:
             # Convert import to module name
             imported_module_name = imported_module.replace("/", ".").replace("\\", ".")
             if imported_module_name in G:
-                edge_type = "inits" if node_type == 'module_dir' else "uses"
+                edge_type = "inits" if classify_node(python_file, root) == 'module_dir' else "uses"
                 if CONFIG["edge"].get(edge_type):
-                    G.add_edge(node_key, imported_module_name, **CONFIG["edge"][edge_type])
+                    G.add_edge(node.display_name, imported_module_name, **CONFIG["edge"][edge_type])
 
     return G
 
