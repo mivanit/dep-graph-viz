@@ -34,9 +34,13 @@ CONFIG: dict[str, Any] = {
         },
     },
     "node": {
-        "dir": {
+        "module": {
             "shape": "folder",
             "color": "black",
+        },
+        "dir": {
+            "shape": "folder",
+            "color": "blue",
         },
         "file": {
             "shape": "note",
@@ -48,41 +52,47 @@ CONFIG: dict[str, Any] = {
     },
 }
 
+NULL_STRINGS: set[str] = {"none", "null"}
+
 def _process_config(root: str|None) -> None:
     """converts none types, auto-detects url_prefix from git if needed"""
     global CONFIG
+    # convert none/null items
     for key, value in CONFIG["edge"].items():
-        if isinstance(value, str) and value.lower() in ["none", "null"]:
+        if isinstance(value, str) and value.lower() in NULL_STRINGS:
             CONFIG["edge"][key] = None
     for key, value in CONFIG["node"].items():
-        if isinstance(value, str) and value.lower() in ["none", "null"]:
+        if isinstance(value, str) and value.lower() in NULL_STRINGS:
             CONFIG["node"][key] = None
 
+
+    # get git url and branch
     if (CONFIG["url_prefix"] is None) and (CONFIG["auto_url_format"] is not None) and (root is not None):
-            try:
-                # navigate to root
-                orig_dir: str = os.getcwd()
-                os.chdir(root)
-                # get git remote url
-                git_remote_url: str = subprocess.check_output(
-                    "git remote get-url origin",
-                    shell=True,
-                    encoding="utf-8",
-                ).strip().rstrip("/")
-                for rep_key, rep_val in CONFIG["auto_url_replace"].items():
-                    git_remote_url = git_remote_url.replace(rep_key, rep_val)
-                # get branch
-                git_branch: str = subprocess.check_output(
-                    "git rev-parse --abbrev-ref HEAD",
-                    shell=True,
-                    encoding="utf-8",
-                ).strip()
-                CONFIG["url_prefix"] = CONFIG["auto_url_format"].format(git_remote_url=git_remote_url, git_branch=git_branch)
-            except subprocess.CalledProcessError as e:
-                print(f"could not get git info, not adding URLs: {e}")
-                CONFIG["url_prefix"] = None
-            finally:
-                os.chdir(orig_dir)
+        try:
+            # navigate to root
+            orig_dir: str = os.getcwd()
+            os.chdir(root)
+            # get git remote url
+            git_remote_url: str = subprocess.check_output(
+                "git remote get-url origin",
+                shell=True,
+                encoding="utf-8",
+            ).strip().rstrip("/")
+            for rep_key, rep_val in CONFIG["auto_url_replace"].items():
+                git_remote_url = git_remote_url.replace(rep_key, rep_val)
+            # get branch
+            git_branch: str = subprocess.check_output(
+                "git rev-parse --abbrev-ref HEAD",
+                shell=True,
+                encoding="utf-8",
+            ).strip()
+            CONFIG["url_prefix"] = CONFIG["auto_url_format"].format(git_remote_url=git_remote_url, git_branch=git_branch)
+        except subprocess.CalledProcessError as e:
+            print(f"could not get git info, not adding URLs: {e}")
+            CONFIG["url_prefix"] = None
+        finally:
+            # go back to original directory
+            os.chdir(orig_dir)
 
 
 def get_imports(source_code: str) -> list[str]:
@@ -125,7 +135,7 @@ def build_graph(python_files: list[str], root: str) -> nx.DiGraph:
         python_file_rel: str = module_name.replace(".", "/")
         # Add node for module, with rank based on depth in hierarchy
         if "__init__" in python_file:
-            G.add_node(module_name, rank=module_name.count("."), **CONFIG["node"]["dir"])
+            G.add_node(module_name, rank=module_name.count("."), **CONFIG["node"]["module"])
         else:
             G.add_node(module_name, rank=module_name.count("."), **CONFIG["node"]["file"])
             python_file_rel += ".py"
@@ -243,24 +253,29 @@ def main(
 
     """
 
+    # update config from file if given
     if config_file is not None:
         with open(config_file, "r", encoding="utf-8") as f:
             update_with_nested_dict(CONFIG, json.load(f))
 
+    # update config from kwargs
     if len(kwargs) > 0:
         update_with_nested_dict(
             CONFIG, 
             kwargs_to_nested_dict(kwargs, transform_key=lambda x: x.lstrip("-"), sep="."),
         )
 
+    # process by converting none types, auto-detecting url_prefix from git if needed
     _process_config(root=root)
 
+    # print help message and exit
     if "h" in CONFIG or "help" in CONFIG:
         print(main.__doc__)
         print("# current config:")
         print(json.dumps(CONFIG, indent=2))
         exit()
-    
+
+    # print config and exit    
     if print_cfg:
         print(json.dumps(CONFIG, indent=2))
         exit()
@@ -271,6 +286,8 @@ def main(
     print("# getting python files...")
     python_files: list[str] = get_python_files(root)
     print(f"\t found {len(python_files)} python files")
+    print(python_files)
+    
     print("# building graph...")
     G: nx.MultiDiGraph = build_graph(python_files, root)
     print(f"\t built graph with {len(G.nodes)} nodes and {len(G.edges)} edges")
