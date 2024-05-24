@@ -39,6 +39,10 @@ CONFIG: dict[str, Any] = {
         },
     },
     "node": {
+        "module_root": {
+            "shape": "folder",
+            "color": "purple",
+        },
         "root": {
             "shape": "folder",
             "color": "purple",
@@ -156,10 +160,10 @@ def process_imports(imports: list[str], root: str) -> list[str]:
         for x in imports
     ]
 
-NodeTypes = Literal["root", "module_root", "module_dir", "dir", "module_file", "script"]
+NodeType = Literal["root", "module_root", "module_dir", "dir", "module_file", "script"]
 
 
-def classify_node(path: str, root: str) -> NodeTypes:
+def classify_node(path: str, root: str) -> NodeType:
     path = path.replace("\\", "/")
     parent_dir: str = os.path.dirname(path)
     rel_path: str = os.path.relpath(path, root)
@@ -198,9 +202,16 @@ def build_graph(python_files: list[str], root: str) -> nx.MultiDiGraph:
 
     # Add nodes for directories and root
     for directory in directories:
-        node_type: str = classify_node(os.path.join(root, directory), root)
-        dir_module_name = directory.replace("/", ".").replace("\\", ".")
-        add_node(G, dir_module_name, node_type)
+        node_type: NodeType = classify_node(os.path.join(root, directory), root)
+        dir_processed: str = normalize_path(directory)
+        if node_type.startswith('module_'):
+            dir_processed = path_to_module(dir_processed)
+        if node_type.endswith('root'):
+            # TODO: get the name of the root directory
+            dir_processed = "ROOT"
+
+        dir_processed = f'"{dir_processed}"'
+        add_node(G, dir_processed, node_type)
 
     for python_file in python_files:
         module_name = process_imports([python_file], root=root)[0]
