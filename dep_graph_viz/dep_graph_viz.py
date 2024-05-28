@@ -6,23 +6,42 @@ from pathlib import Path
 import subprocess
 from typing import Literal, Any
 from dataclasses import dataclass
+from copy import deepcopy
 
 from muutils.dictmagic import update_with_nested_dict, kwargs_to_nested_dict
 import networkx as nx
 import pydot
 from networkx.drawing.nx_pydot import to_pydot
 
+from dep_graph_viz.config import _DEFAULT_CONFIG
+
+# *absolute* path of the root directory
 ROOT: str|None = None
 
 NodeType = Literal["root", "module_root", "module_dir", "dir", "module_file", "script"]
 
 NULL_STRINGS: set[str] = {"none", "null"}
 
+CONFIG: dict[str, Any] = deepcopy(_DEFAULT_CONFIG)
+
 
 def classify_node(path: str, root: str = ROOT) -> NodeType:
+    # posixify path
     path = path.replace("\\", "/")
     parent_dir: str = os.path.dirname(path)
     rel_path: str = os.path.relpath(path, root)
+
+    # error checking
+    if not os.path.exists(path):
+        raise FileNotFoundError(f"file not found: {path}")
+    
+    if not os.path.exists(parent_dir):
+        raise FileNotFoundError(f"parent directory not found: {parent_dir}")
+
+    if not os.path.exists(rel_path):
+        raise FileNotFoundError(f"relative path not found: {rel_path}")
+
+    # if directory
     if os.path.isdir(path):
         files: list[str] = os.listdir(path)
         # handle root
@@ -32,8 +51,10 @@ def classify_node(path: str, root: str = ROOT) -> NodeType:
             else:
                 return 'root'
         else:
+            # module or ordinary directory
             return 'module_dir' if '__init__.py' in files else 'dir'
     elif rel_path.endswith('.py'):
+        # if a py file, module or script
         if '__init__.py' in os.listdir(parent_dir):
             return 'module_file'
         else:
@@ -46,88 +67,32 @@ class Node:
     path: str
     display_name: str
     url: str | None = None
-
-    @property
-    def node_type(self) -> NodeType:
-        return classify_node(self.path)
+    node_type: NodeType | None = None
 
     @classmethod
     def get_node(
             cls,
             path: str,
-            root: str,
+            root: str = ROOT,
         ) -> "Node":
         rel_path: str = os.path.relpath(path, root).replace("\\", "/")
         node_type: NodeType = classify_node(path, root)
-        display_name: str = path_to_module(rel_path) if node_type != "script" else rel_path
+        display_name: str = path_to_module(rel_path) if node_type.startswith("module") else rel_path
         
         url: str|None = None
         url_prefix: str = CONFIG['url_prefix']
         if url_prefix:
             url = f"{url_prefix}{rel_path}"
         
-        return Node(path=rel_path, display_name=display_name, url=url)
+        return Node(
+            path=rel_path,
+            display_name=display_name,
+            url=url,
+            node_type=node_type,
+        )
 
 
-CONFIG: dict[str, Any] = {
-    "url_prefix": None,
-    "auto_url_format": "{git_remote_url}/tree/{git_branch}/",
-    "auto_url_replace": {".git": ""},
-    "edge": {
-        "module_hierarchy": {
-            "color": "black",
-            "penwidth": "3",
-            "style": "solid",
-        },
-        "hierarchy": {
-            "color": "black",
-            "penwidth": "1",
-            "style": "solid",
-        },
-        "uses": {
-            "color": "red",
-            "penwidth": "1",
-            "style": "solid",
-        },
-        "inits": {
-            "color": "blue",
-            "penwidth": "1",
-            "style": "dashed",
-        },
-    },
-    "node": {
-        "module_root": {
-            "shape": "folder",
-            "color": "purple",
-        },
-        "root": {
-            "shape": "folder",
-            "color": "purple",
-        },
-        "module_dir": {
-            "shape": "folder",
-            "color": "black",
-        },
-        "dir": {
-            "shape": "folder",
-            "color": "blue",
-        },
-        "module_file": {
-            "shape": "note",
-            "color": "black",
-        },
-        "script": {
-            "shape": "note",
-            "color": "green",
-        },
-    },
-    "dot_attrs": {
-        'rankdir': 'TB',
-    },
-}
-
-
-def _process_config(root: str | None) -> None:
+def _process_config(root: str = ROOT) -> None:
     """converts none types, auto-detects url_prefix from git if needed"""
     global CONFIG
     # convert none/null items
@@ -182,11 +147,28 @@ def get_imports(source_code: str) -> list[str]:
             imports.append(node.module)
     return imports
 
-def get_relevant_directories(root: str) -> set[str]:
-    root = os.path.abspath(root)
-    directories_with_py_files: set[str] = {os.path.relpath(os.path.dirname(file), root) for file in get_python_files(root)}
+def get_python_files(root: str = ROOT) -> list[str]:
+    """Get all Python files in a directory and its subdirectories"""
+    if not os.path.exists(root):
+        raise FileNotFoundError(f"root directory not found: {root}")
+
+    glob_pattern: str = Path(root).as_posix().rstrip("/") + "/**/*.py"
+    return glob.glob(glob_pattern, recursive=True)
+
+def get_relevant_directories(root: str = ROOT) -> set[str]:
+    if not os.path.exists(root):
+        raise FileNotFoundError(f"root directory not found: {root}")
+
+    # get all directories with python files
+    directories_with_py_files: set[str] = {
+        os.path.relpath(os.path.dirname(file), root)
+        for file in get_python_files(root)
+    }
+    # allocate output
     all_directories: set[str] = set(directories_with_py_files)
+    all_directories.add(root)
     
+    # get every directory between root and known dir
     for directory in directories_with_py_files:
         while directory and directory != '.':
             parent_directory = os.path.dirname(directory)
@@ -237,6 +219,9 @@ def build_graph(python_files: list[str], root: str) -> nx.MultiDiGraph:
     G: nx.MultiDiGraph = nx.MultiDiGraph()
     directories: set[str] = get_relevant_directories(root)
 
+    print(directories)
+    print(python_files)
+
     # Add nodes for directories and root
     for directory in directories:
         node: Node = Node.get_node(os.path.join(root, directory), root)
@@ -284,10 +269,6 @@ def write_dot(G: nx.DiGraph, output_filename: str) -> None:
     P.write_raw(output_filename)
 
 
-def get_python_files(root: str) -> list[str]:
-    """Get all Python files in a directory and its subdirectories"""
-    glob_pattern: str = Path(root).as_posix().rstrip("/") + "/**/*.py"
-    return glob.glob(glob_pattern, recursive=True)
 
 
 def main(
