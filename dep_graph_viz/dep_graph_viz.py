@@ -15,6 +15,7 @@ from networkx.drawing.nx_pydot import to_pydot
 
 from dep_graph_viz.config import _DEFAULT_CONFIG
 
+ORIG_DIR: str = os.getcwd()
 # *absolute* path of the root directory
 ROOT: str|None = None
 
@@ -25,21 +26,23 @@ NULL_STRINGS: set[str] = {"none", "null"}
 CONFIG: dict[str, Any] = deepcopy(_DEFAULT_CONFIG)
 
 
-def classify_node(path: str, root: str = ROOT) -> NodeType:
+def classify_node(path: str, root: str = ".") -> NodeType:
     # posixify path
     path = path.replace("\\", "/")
-    parent_dir: str = os.path.dirname(path)
     rel_path: str = os.path.relpath(path, root)
+    parent_dir: str = os.path.dirname(rel_path)
+    if parent_dir == '':
+        parent_dir = '.'
 
     # error checking
     if not os.path.exists(path):
-        raise FileNotFoundError(f"file not found: {path}")
+        raise FileNotFoundError(f"file not found: '{path}' for {path = } and {root = }")
     
     if not os.path.exists(parent_dir):
-        raise FileNotFoundError(f"parent directory not found: {parent_dir}")
+        raise FileNotFoundError(f"parent directory not found: '{parent_dir}' for {path = } and {root = }")
 
     if not os.path.exists(rel_path):
-        raise FileNotFoundError(f"relative path not found: {rel_path}")
+        raise FileNotFoundError(f"relative path not found: '{rel_path}' for {path = } and {root = }")
 
     # if directory
     if os.path.isdir(path):
@@ -73,7 +76,7 @@ class Node:
     def get_node(
             cls,
             path: str,
-            root: str = ROOT,
+            root: str = ".",
         ) -> "Node":
         rel_path: str = os.path.relpath(path, root).replace("\\", "/")
         node_type: NodeType = classify_node(path, root)
@@ -90,9 +93,12 @@ class Node:
             url=url,
             node_type=node_type,
         )
+    
+    def __hash__(self) -> int:
+        return hash(self.path)
 
 
-def _process_config(root: str = ROOT) -> None:
+def _process_config(root: str = ".") -> None:
     """converts none types, auto-detects url_prefix from git if needed"""
     global CONFIG
     # convert none/null items
@@ -147,7 +153,7 @@ def get_imports(source_code: str) -> list[str]:
             imports.append(node.module)
     return imports
 
-def get_python_files(root: str = ROOT) -> list[str]:
+def get_python_files(root: str = ".") -> list[str]:
     """Get all Python files in a directory and its subdirectories"""
     if not os.path.exists(root):
         raise FileNotFoundError(f"root directory not found: {root}")
@@ -155,13 +161,15 @@ def get_python_files(root: str = ROOT) -> list[str]:
     glob_pattern: str = Path(root).as_posix().rstrip("/") + "/**/*.py"
     return glob.glob(glob_pattern, recursive=True)
 
-def get_relevant_directories(root: str = ROOT) -> set[str]:
+def get_relevant_directories(root: str = ".") -> set[str]:
     if not os.path.exists(root):
         raise FileNotFoundError(f"root directory not found: {root}")
 
     # get all directories with python files
     directories_with_py_files: set[str] = {
-        os.path.relpath(os.path.dirname(file), root)
+        os.path.dirname(
+            os.path.relpath(file, root)
+        )
         for file in get_python_files(root)
     }
     # allocate output
@@ -215,20 +223,21 @@ def add_node(G: nx.MultiDiGraph, node: Node) -> None:
     else:
         raise ValueError(f"node {node.path} already exists in the graph!")
 
-def build_graph(python_files: list[str], root: str) -> nx.MultiDiGraph:
+def build_graph(python_files: list[str], root: str = ".") -> nx.MultiDiGraph:
     G: nx.MultiDiGraph = nx.MultiDiGraph()
     directories: set[str] = get_relevant_directories(root)
 
-    print(directories)
-    print(python_files)
+    print("\n".join(sorted(directories)))
+    print("-"*30)
+    print("\n".join(sorted(python_files)))
 
     # Add nodes for directories and root
     for directory in directories:
-        node: Node = Node.get_node(os.path.join(root, directory), root)
+        node: Node = Node.get_node(directory)
         add_node(G, node)
 
     for python_file in python_files:
-        node: Node = Node.get_node(python_file, root)
+        node: Node = Node.get_node(python_file)
         add_node(G, node)
 
         # Read source code
@@ -364,15 +373,22 @@ def main(
     
     if root is None:
         raise ValueError("root is required")
+    
+    # change directory
+    os.chdir(root)
+    global ROOT
+    ROOT = root
 
     print("# getting python files...")
-    python_files: list[str] = get_python_files(root)
+    python_files: list[str] = get_python_files()
     print(f"\t found {len(python_files)} python files")
     
     print("# building graph...")
-    G: nx.MultiDiGraph = build_graph(python_files, root)
+    G: nx.MultiDiGraph = build_graph(python_files)
     print(f"\t built graph with {len(G.nodes)} nodes and {len(G.edges)} edges")
     
+    # change back to original directory
+    os.chdir(ORIG_DIR)
     output_file_dot: str = f"{output}.dot"
     print(f"# writing dot file: {output_file_dot}")
     write_dot(G, f"{output_file_dot}")
