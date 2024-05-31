@@ -51,6 +51,7 @@ _DEFAULT_CONFIG: dict = {
         },
     },
     "dot_attrs": {
-        'rankdir': 'TB',
+        # 'rankdir': 'TB',
+        'rankdir': 'LR',
     },
 }

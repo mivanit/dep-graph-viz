@@ -26,6 +26,48 @@ NULL_STRINGS: set[str] = {"none", "null"}
 CONFIG: dict[str, Any] = deepcopy(_DEFAULT_CONFIG)
 
 
+def _process_config(root: str = ".") -> None:
+    """converts none types, auto-detects url_prefix from git if needed"""
+    global CONFIG
+    # convert none/null items
+    for key, value in CONFIG["edge"].items():
+        if isinstance(value, str) and value.lower() in NULL_STRINGS:
+            CONFIG["edge"][key] = None
+    for key, value in CONFIG["node"].items():
+        if isinstance(value, str) and value.lower() in NULL_STRINGS:
+            CONFIG["node"][key] = None
+
+
+    # get git url and branch
+    if (CONFIG["url_prefix"] is None) and (CONFIG["auto_url_format"] is not None) and (root is not None):
+        try:
+            # navigate to root
+            orig_dir: str = os.getcwd()
+            os.chdir(root)
+            # get git remote url
+            git_remote_url: str = subprocess.check_output(
+                "git remote get-url origin",
+                shell=True,
+                encoding="utf-8",
+            ).strip().rstrip("/")
+            for rep_key, rep_val in CONFIG["auto_url_replace"].items():
+                git_remote_url = git_remote_url.replace(rep_key, rep_val)
+            # get branch
+            git_branch: str = subprocess.check_output(
+                "git rev-parse --abbrev-ref HEAD",
+                shell=True,
+                encoding="utf-8",
+            ).strip()
+            CONFIG["url_prefix"] = CONFIG["auto_url_format"].format(git_remote_url=git_remote_url, git_branch=git_branch)
+        except subprocess.CalledProcessError as e:
+            print(f"could not get git info, not adding URLs: {e}")
+            CONFIG["url_prefix"] = None
+        finally:
+            # go back to original directory
+            os.chdir(orig_dir)
+
+
+
 def classify_node(path: str, root: str = ".") -> NodeType:
     # posixify path
     path = path.replace("\\", "/")
@@ -67,6 +109,7 @@ def classify_node(path: str, root: str = ".") -> NodeType:
 
 @dataclass(frozen=True)
 class Node:
+    orig_path: str
     path: str
     display_name: str
     url: str | None = None
@@ -79,7 +122,12 @@ class Node:
             path: str,
             root: str = ".",
         ) -> "Node":
-        rel_path: str = os.path.relpath(path, root).replace("\\", "/")
+        # rel_path: str = os.path.relpath(path, root).replace("\\", "/")
+        rel_path: str = normalize_path(os.path.relpath(path, root))
+        # check for filename is __init__.py
+        if os.path.basename(rel_path) == "__init__.py":
+            rel_path = os.path.dirname(rel_path).removesuffix("/")
+
         node_type: NodeType = classify_node(path, root)
         display_name: str = path_to_module(rel_path) if node_type.startswith("module") else rel_path
         
@@ -89,6 +137,7 @@ class Node:
             url = f"{url_prefix}{rel_path}"
         
         return Node(
+            orig_path=path,
             path=rel_path,
             display_name=display_name,
             url=url,
@@ -96,50 +145,26 @@ class Node:
             parent_dir=os.path.dirname(rel_path),
         )
     
+    def is_root(self) -> bool:
+        return self.node_type in {"root", "module_root"}
+    
+    def is_module(self) -> bool:
+        return self.node_type.startswith("module")
+    
+    def get_rank(self) -> int:
+        return self.path.count("/")
+    
     def __hash__(self) -> int:
         return hash(self.path)
+    
+    def __str__(self) -> str:
+        if self.is_root():
+            return "ROOT"
+        else:
+            return self.display_name
 
-
-def _process_config(root: str = ".") -> None:
-    """converts none types, auto-detects url_prefix from git if needed"""
-    global CONFIG
-    # convert none/null items
-    for key, value in CONFIG["edge"].items():
-        if isinstance(value, str) and value.lower() in NULL_STRINGS:
-            CONFIG["edge"][key] = None
-    for key, value in CONFIG["node"].items():
-        if isinstance(value, str) and value.lower() in NULL_STRINGS:
-            CONFIG["node"][key] = None
-
-
-    # get git url and branch
-    if (CONFIG["url_prefix"] is None) and (CONFIG["auto_url_format"] is not None) and (root is not None):
-        try:
-            # navigate to root
-            orig_dir: str = os.getcwd()
-            os.chdir(root)
-            # get git remote url
-            git_remote_url: str = subprocess.check_output(
-                "git remote get-url origin",
-                shell=True,
-                encoding="utf-8",
-            ).strip().rstrip("/")
-            for rep_key, rep_val in CONFIG["auto_url_replace"].items():
-                git_remote_url = git_remote_url.replace(rep_key, rep_val)
-            # get branch
-            git_branch: str = subprocess.check_output(
-                "git rev-parse --abbrev-ref HEAD",
-                shell=True,
-                encoding="utf-8",
-            ).strip()
-            CONFIG["url_prefix"] = CONFIG["auto_url_format"].format(git_remote_url=git_remote_url, git_branch=git_branch)
-        except subprocess.CalledProcessError as e:
-            print(f"could not get git info, not adding URLs: {e}")
-            CONFIG["url_prefix"] = None
-        finally:
-            # go back to original directory
-            os.chdir(orig_dir)
-
+    def __repr__(self) -> str:
+        return str(self)
 
 def get_imports(source_code: str) -> list[str]:
     """Get all the imports from a source code string"""
@@ -187,6 +212,9 @@ def get_relevant_directories(root: str = ".") -> set[str]:
             directory = parent_directory
 
     all_directories.add('.')  # Ensure the root directory is included
+
+    all_directories = set(map(normalize_path, all_directories))
+
     return all_directories
 
 
@@ -214,14 +242,14 @@ def process_imports(imports: list[str], root: str) -> list[str]:
 
 def add_node(G: nx.MultiDiGraph, node: Node) -> None:
     """Add a node to the graph with the given type and optional URL."""
-    if node.display_name not in G:
+    if node not in G:
         G.add_node(
-            node.display_name,
-            rank=node.path.count("/"),
+            node,
+            rank=node.get_rank(),
             **CONFIG["node"][node.node_type],
         )
         if node.url:
-            G.nodes[node.display_name]["URL"] = f'"{node.url}"'
+            G.nodes[node]["URL"] = f'"{node.url}"'
     else:
         raise ValueError(f"node {node.path} already exists in the graph!")
 
@@ -244,6 +272,22 @@ def build_graph(
     }
     for node in directory_nodes.values():
         add_node(G, node)
+
+    # add folder hierarchy
+    for directory, node in directory_nodes.items():
+        if node.is_root():
+            continue
+        parent_path: str = normalize_path(os.path.dirname(directory))
+        if not parent_path:
+            parent_path = "."
+        print(f"paths: {parent_path} -> {directory}")
+        parent_node: Node = directory_nodes[parent_path]
+        print(f"names: {parent_node} -> {node}")
+        if parent_node.is_module():
+            G.add_edge(parent_node, node, **CONFIG["edge"]["module_hierarchy"])
+        else:
+            G.add_edge(parent_node, node, **CONFIG["edge"]["hierarchy"])
+    
 
     for python_file in python_files:
         node: Node = Node.get_node(python_file)
