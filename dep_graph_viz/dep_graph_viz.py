@@ -65,12 +65,13 @@ def classify_node(path: str, root: str = ".") -> NodeType:
     else:
         raise ValueError(f"unknown path type: {path}")
 
-@dataclass
+@dataclass(frozen=True)
 class Node:
     path: str
     display_name: str
     url: str | None = None
     node_type: NodeType | None = None
+    parent_dir: str | None = None
 
     @classmethod
     def get_node(
@@ -92,6 +93,7 @@ class Node:
             display_name=display_name,
             url=url,
             node_type=node_type,
+            parent_dir=os.path.dirname(rel_path),
         )
     
     def __hash__(self) -> int:
@@ -223,7 +225,11 @@ def add_node(G: nx.MultiDiGraph, node: Node) -> None:
     else:
         raise ValueError(f"node {node.path} already exists in the graph!")
 
-def build_graph(python_files: list[str], root: str = ".") -> nx.MultiDiGraph:
+def build_graph(
+        python_files: list[str],
+        root: str = ".",
+        only_heirarchy: bool = True,
+    ) -> nx.MultiDiGraph:
     G: nx.MultiDiGraph = nx.MultiDiGraph()
     directories: set[str] = get_relevant_directories(root)
 
@@ -232,38 +238,44 @@ def build_graph(python_files: list[str], root: str = ".") -> nx.MultiDiGraph:
     print("\n".join(sorted(python_files)))
 
     # Add nodes for directories and root
-    for directory in directories:
-        node: Node = Node.get_node(directory)
+    directory_nodes: dict[str, Node] = {
+        directory: Node.get_node(directory)
+        for directory in directories
+    }
+    for node in directory_nodes.values():
         add_node(G, node)
 
     for python_file in python_files:
         node: Node = Node.get_node(python_file)
         add_node(G, node)
 
-        # Read source code
-        with open(python_file, "r", encoding="utf-8") as f:
-            source_code: str = f.read()
-
         # Get hierarchy
-        if classify_node(python_file, root) in {'module_file', 'module_dir'}:
-            module_parents: list[str] = [
-                x for x in list(G.nodes)
-                if x != node.display_name and node.display_name.startswith(x)
+        if node.node_type not in {"root", "module_root"}:
+            parents: list[str] = [
+                parent_node.display_name
+                for parent_node in directory_nodes.values()
+                if node.parent_dir == parent_node.path
             ]
-            if module_parents:
-                module_parent: str = sorted(module_parents, key=len)[-1]
+            if parents:
+                assert len(parents) == 1, f"multiple parents found for {node.path}: {parents}"
+                module_parent: str = sorted(parents, key=len)[-1]
                 if CONFIG["edge"]["hierarchy"]:
                     G.add_edge(module_parent, node.display_name, **CONFIG["edge"]["hierarchy"])
 
-        # Get imports
-        imported_modules: list[str] = get_imports(source_code)
-        for imported_module in imported_modules:
-            # Convert import to module name
-            imported_module_name = imported_module.replace("/", ".").replace("\\", ".")
-            if imported_module_name in G:
-                edge_type = "inits" if classify_node(python_file, root) == 'module_dir' else "uses"
-                if CONFIG["edge"].get(edge_type):
-                    G.add_edge(node.display_name, imported_module_name, **CONFIG["edge"][edge_type])
+        if not only_heirarchy:
+            # Read source code
+            with open(python_file, "r", encoding="utf-8") as f:
+                source_code: str = f.read()
+
+            # Get imports
+            imported_modules: list[str] = get_imports(source_code)
+            for imported_module in imported_modules:
+                # Convert import to module name
+                imported_module_name = imported_module.replace("/", ".").replace("\\", ".")
+                if imported_module_name in G:
+                    edge_type = "inits" if classify_node(python_file, root) == 'module_dir' else "uses"
+                    if CONFIG["edge"].get(edge_type):
+                        G.add_edge(node.display_name, imported_module_name, **CONFIG["edge"][edge_type])
 
     return G
 
