@@ -10,7 +10,7 @@ _DEFAULT_CONFIG: dict = {
         },
         "hierarchy": {
             "color": "black",
-            "penwidth": "1",
+            "penwidth": "3",
             "style": "solid",
         },
         "uses": {

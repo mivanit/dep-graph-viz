@@ -123,6 +123,8 @@ class Node:
             root: str = ".",
         ) -> "Node":
         # rel_path: str = os.path.relpath(path, root).replace("\\", "/")
+        if path == "":
+            path = "."
         rel_path: str = normalize_path(os.path.relpath(path, root))
         # check for filename is __init__.py
         if os.path.basename(rel_path) == "__init__.py":
@@ -159,9 +161,10 @@ class Node:
     
     def __str__(self) -> str:
         if self.is_root():
-            return "ROOT"
+            # absolute path of the root directory
+            return f'"{CONFIG["git_remote_url"]}"' if CONFIG.get("git_remote_url") else '"ROOT"'
         else:
-            return self.display_name
+            return f'"{self.display_name}"'
 
     def __repr__(self) -> str:
         return str(self)
@@ -256,14 +259,10 @@ def add_node(G: nx.MultiDiGraph, node: Node) -> None:
 def build_graph(
         python_files: list[str],
         root: str = ".",
-        only_heirarchy: bool = True,
+        only_heirarchy: bool = False,
     ) -> nx.MultiDiGraph:
     G: nx.MultiDiGraph = nx.MultiDiGraph()
     directories: set[str] = get_relevant_directories(root)
-
-    print("\n".join(sorted(directories)))
-    print("-"*30)
-    print("\n".join(sorted(python_files)))
 
     # Add nodes for directories and root
     directory_nodes: dict[str, Node] = {
@@ -280,10 +279,8 @@ def build_graph(
         parent_path: str = normalize_path(os.path.dirname(directory))
         if not parent_path:
             parent_path = "."
-        print(f"paths: {parent_path} -> {directory}")
         parent_node: Node = directory_nodes[parent_path]
-        print(f"names: {parent_node} -> {node}")
-        if parent_node.is_module():
+        if parent_node.is_module() and node.is_module():
             G.add_edge(parent_node, node, **CONFIG["edge"]["module_hierarchy"])
         else:
             G.add_edge(parent_node, node, **CONFIG["edge"]["hierarchy"])
@@ -449,11 +446,16 @@ def main(
     print(f"# writing dot file: {output_file_dot}")
     write_dot(G, f"{output_file_dot}")
 
-    print(f"# running dot...")
-    print(f"\tcommand:")
-    cmd: str = f"dot -T{output_fmt} {output_file_dot} -o {output}.{output_fmt} {'-v' if verbose else ''}"
-    print(f"\t$ {cmd}")
-    os.system(cmd)
+    if output_fmt == "html":
+        print(f"# generating html...")
+        from dep_graph_viz.html import generate_html
+        generate_html(output_file_dot, f"{output}.html")
+    else:
+        print(f"# running dot...")
+        print(f"\tcommand:")
+        cmd: str = f"dot -T{output_fmt} {output_file_dot} -o {output}.{output_fmt} {'-v' if verbose else ''}"
+        print(f"\t$ {cmd}")
+        os.system(cmd)
 
     print("# done!")
 
