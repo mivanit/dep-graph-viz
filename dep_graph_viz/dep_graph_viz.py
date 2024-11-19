@@ -56,8 +56,13 @@ def _process_config(root: str|None = ".") -> None:
     # convert none/null items
     for k_conv in ("edge", "node"):
         for key, value in CONFIG[k_conv].items():
-            if isinstance(value, str) and value.lower() in NULL_STRINGS:
-                CONFIG[k_conv][key] = None
+            if isinstance(value, str):
+                if value.lower() in NULL_STRINGS:
+                    CONFIG[k_conv][key] = None
+            elif isinstance(value, dict):
+                for sub_key, sub_value in value.items():
+                    if isinstance(sub_value, str) and sub_value.lower() in NULL_STRINGS:
+                        CONFIG[k_conv][key][sub_key] = None
 
     # get git url and branch
     if (
@@ -96,6 +101,109 @@ def _process_config(root: str|None = ".") -> None:
         finally:
             # go back to original directory
             os.chdir(orig_dir)
+
+
+def normalize_path(path: str) -> str:
+    "convert any path to a posix path"
+    return path.replace("\\", "/")
+
+
+def path_to_module(path: str) -> str:
+    "convert a path to a python file to a module name"
+    return normalize_path(path).replace("/", ".").removesuffix(".py")
+
+def add_node(G: nx.MultiDiGraph, node: "Node") -> None:
+    """Add a node to the graph with the given type and optional URL."""
+    if node not in G:
+        G.add_node(
+            node,
+            rank=node.get_rank(),
+            **CONFIG["node"][node.node_type],
+        )
+        if node.url:
+            G.nodes[node]["URL"] = f'"{node.url}"'
+    else:
+        raise ValueError(f"node {node.path} already exists in the graph!")
+
+
+def get_imports(source_code: str) -> list[str]:
+    "Get all the imports from a source code string"
+    tree: ast.Module = ast.parse(source_code)
+    imports: list[str] = []
+    for node in ast.walk(tree):
+        # Check if node is an import statement
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                imports.append(alias.name)
+        # Check if node is a from ... import ... statement
+        elif isinstance(node, ast.ImportFrom):
+            imports.append(node.module)
+    return imports
+
+
+def get_python_files(root: str = ".") -> list[str]:
+    "Get all Python files in a directory and its subdirectories"
+    if not os.path.exists(root):
+        raise FileNotFoundError(f"root directory not found: {root}")
+
+    glob_pattern: str = Path(root).as_posix().rstrip("/") + "/**/*.py"
+    files: list[str] = glob.glob(glob_pattern, recursive=True)
+    files = [
+        Path(os.path.relpath(file, os.path.abspath(root))).as_posix()
+        for file in files
+    ]
+    return files
+
+
+def get_relevant_directories(root: str = ".") -> set[str]:
+    "from a root, get a set of all directories with python files in them"
+    if not os.path.exists(root):
+        raise FileNotFoundError(f"root directory not found: {root}")
+
+    # get all directories with python files
+    directories_with_py_files: set[str] = {
+        os.path.dirname(file) for file in get_python_files(root)
+    }
+    directories_with_py_files = {
+        x if x != "" else "." # map empty string to root
+        for x in directories_with_py_files
+    }
+    # allocate output
+    all_directories: set[str] = set(directories_with_py_files)
+
+    # get every directory between root and root dir
+    # since some directories might have no python files, but contain dirs with python files
+    for directory in directories_with_py_files:
+        while directory and os.path.abspath(directory) != os.path.abspath(root):
+            parent_directory = os.path.dirname(directory)
+            if parent_directory and parent_directory != directory:
+                all_directories.add(parent_directory)
+            directory = parent_directory
+
+    if "" in all_directories:
+        raise ValueError(f"empty string found in {all_directories = }")
+    all_directories = set(map(normalize_path, all_directories))
+
+    return all_directories
+
+
+
+
+
+
+
+
+# =================================================================
+
+
+
+
+
+
+
+
+
+
 
 
 def classify_node(path: str, root: str = ".") -> NodeType:
@@ -247,95 +355,8 @@ class Node:
 
 
 
-def get_imports(source_code: str) -> list[str]:
-    "Get all the imports from a source code string"
-    tree: ast.Module = ast.parse(source_code)
-    imports: list[str] = []
-    for node in ast.walk(tree):
-        # Check if node is an import statement
-        if isinstance(node, ast.Import):
-            for alias in node.names:
-                imports.append(alias.name)
-        # Check if node is a from ... import ... statement
-        elif isinstance(node, ast.ImportFrom):
-            imports.append(node.module)
-    return imports
 
 
-def get_python_files(root: str = ".") -> list[str]:
-    "Get all Python files in a directory and its subdirectories"
-    if not os.path.exists(root):
-        raise FileNotFoundError(f"root directory not found: {root}")
-
-    glob_pattern: str = Path(root).as_posix().rstrip("/") + "/**/*.py"
-    return glob.glob(glob_pattern, recursive=True)
-
-
-def get_relevant_directories(root: str = ".") -> set[str]:
-    "from a root, get a set of all directories with python files in them"
-    if not os.path.exists(root):
-        raise FileNotFoundError(f"root directory not found: {root}")
-
-    # get all directories with python files
-    directories_with_py_files: set[str] = {
-        os.path.dirname(os.path.relpath(file, root)) for file in get_python_files(root)
-    }
-    # allocate output
-    all_directories: set[str] = set(directories_with_py_files)
-    all_directories.add(root)
-
-    # get every directory between root and known dir
-    for directory in directories_with_py_files:
-        while directory and directory != ".":
-            parent_directory = os.path.dirname(directory)
-            if parent_directory and parent_directory != directory:
-                all_directories.add(parent_directory)
-            directory = parent_directory
-
-    all_directories.add(".")  # Ensure the root directory is included
-    if "" in all_directories:
-        all_directories.remove("")  # Remove empty string
-    all_directories = set(map(normalize_path, all_directories))
-
-    print(all_directories)
-    print("="*100)
-    return all_directories
-
-
-def normalize_path(path: str) -> str:
-    "convert any path to a posix path"
-    return path.replace("\\", "/")
-
-
-def path_to_module(path: str) -> str:
-    "convert a path to a python file to a module name"
-    return normalize_path(path).replace("/", ".").removesuffix(".py")
-
-
-# def process_imports(imports: list[str], root: str) -> list[str]:
-#     root_module_path = normalize_path(root).replace("/", ".") + "."
-#     return [
-#         (
-#             path_to_module(normalize_path(x))
-#             .removeprefix(root_module_path)
-#             .removesuffix(".__init__")  # init becomes the module name
-#         )
-#         for x in imports
-#     ]
-
-
-def add_node(G: nx.MultiDiGraph, node: Node) -> None:
-    """Add a node to the graph with the given type and optional URL."""
-    if node not in G:
-        G.add_node(
-            node,
-            rank=node.get_rank(),
-            **CONFIG["node"][node.node_type],
-        )
-        if node.url:
-            G.nodes[node]["URL"] = f'"{node.url}"'
-    else:
-        raise ValueError(f"node {node.path} already exists in the graph!")
 
 
 def build_graph(
