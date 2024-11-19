@@ -2,9 +2,7 @@ import ast
 import glob
 import json
 import os
-import re
 import subprocess
-from copy import deepcopy
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
@@ -14,7 +12,7 @@ import pydot
 from muutils.dictmagic import kwargs_to_nested_dict, update_with_nested_dict
 from networkx.drawing.nx_pydot import to_pydot
 
-from dep_graph_viz.config import CONFIG, _DEFAULT_CONFIG, _process_config
+from dep_graph_viz.config import CONFIG, _process_config
 from dep_graph_viz.util.paths import normalize_path, path_to_module
 
 ORIG_DIR: str = os.getcwd()
