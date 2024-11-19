@@ -13,9 +13,16 @@ def path_to_module(path: str) -> str:
 	# First normalize the path
 	norm_path: str = normalize_path(path).removesuffix(".py").removeprefix("/")
 
+	if not norm_path:
+		raise ValueError(f"empty path: '{path}'")
+
 	# Check for dots in path components (not allowed)
 	if "." in norm_path:
-		raise ValueError(f"path contains '.', invalid: '{path}'")
+		# root path is a special case
+		if norm_path == ".":
+			return norm_path
+		else:
+			raise ValueError(f"path contains '.', invalid: '{path}'")
 
 	# Validate each path component
 	components = norm_path.split("/")

@@ -108,6 +108,8 @@ class Node:
 		if path == "":
 			path = "."
 
+		print(f"getting node: {path = }")
+
 		# set up aliases
 		aliases: set[str] = {path}
 
@@ -121,18 +123,21 @@ class Node:
 		# node type for formatting
 		node_type: NodeType = classify_node(path, root)
 
+		# get parent dir
+		parent_dir: str = normalize_path(os.path.dirname(rel_path))
+		if not parent_dir:
+			parent_dir = "."
+		
 		# unique display name
 		display_name: str = (
 			path_to_module(rel_path) if node_type.startswith("module") else rel_path
 		)
 		aliases.add(display_name)
-		if node_type in {"module_root", "module_dir"}:
+		if node_type in {"module_root", "root"}:
 			display_name = "ROOT"
+			parent_dir = None
+			aliases.add(display_name)
 
-		# get parent dir
-		parent_dir: str = normalize_path(os.path.dirname(rel_path))
-		if not parent_dir:
-			parent_dir = "."
 
 		# get url if needed
 		url: str | None = None
@@ -212,6 +217,7 @@ def build_graph(
 	directory_nodes: dict[str, Node] = {
 		directory: Node.get_node(directory) for directory in directories
 	}
+	print(f"{list(directory_nodes.keys()) = }")
 	for node in directory_nodes.values():
 		add_node(G, node)
 
@@ -232,12 +238,19 @@ def build_graph(
 			edge_type = "hierarchy"
 		G.add_edge(parent_node, node, **edge_config[edge_type])
 
+	print(f"{python_files = }")
 	for python_file in python_files:
-		node: Node = Node.get_node(python_file)
-		add_node(G, node)
+		node: Node
+		# special handling for init files
+		is_init: bool = python_file.endswith("__init__.py")
+		if is_init:
+			node = directory_nodes[os.path.dirname(python_file) or "."]
+		else:
+			node = Node.get_node(python_file)
+			add_node(G, node)
 
 		# add file hierarchy
-		if node.node_type not in {"root", "module_root"}:
+		if node.node_type not in {"root", "module_root"} and not is_init:
 			parents: list[str] = [
 				parent_node.display_name
 				for parent_node in directory_nodes.values()

@@ -92,7 +92,6 @@ def _process_config(root: str | None = ".", config: dict | None = None) -> None:
 		global CONFIG
 		config = CONFIG
 
-	print(config["edge"])
 	# convert none/null items
 	for k_conv in ("edge", "node"):
 		for key, value in config[k_conv].items():
