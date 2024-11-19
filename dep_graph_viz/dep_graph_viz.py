@@ -93,6 +93,7 @@ def get_relevant_directories(root: str = ".") -> set[str]:
 	}
 	# allocate output
 	all_directories: set[str] = set(directories_with_py_files)
+	all_directories.add(".")
 
 	# get every directory between root and root dir
 	# since some directories might have no python files, but contain dirs with python files
