@@ -1,10 +1,7 @@
 import pytest
 
 # Import the functions to be tested
-from dep_graph_viz.dep_graph_viz import (
-	get_python_files,
-	get_relevant_directories,
-)
+from dep_graph_viz.dep_graph_viz import get_python_files, get_relevant_directories
 
 
 def test_get_python_files(tmp_path):

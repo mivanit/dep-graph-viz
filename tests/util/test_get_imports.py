@@ -1,9 +1,7 @@
 import pytest
 
 # Import the functions to be tested
-from dep_graph_viz.dep_graph_viz import (
-	get_imports,
-)
+from dep_graph_viz.dep_graph_viz import get_imports
 
 
 @pytest.mark.parametrize(

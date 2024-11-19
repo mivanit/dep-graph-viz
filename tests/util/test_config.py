@@ -1,11 +1,9 @@
 from copy import deepcopy
+
 import pytest
 
 # Import the functions to be tested
-from dep_graph_viz.dep_graph_viz import (
-	_process_config,
-	CONFIG,
-)
+from dep_graph_viz.dep_graph_viz import CONFIG, _process_config
 
 
 @pytest.fixture(autouse=True)

@@ -1,10 +1,7 @@
 import pytest
 
 # Import the functions to be tested
-from dep_graph_viz.dep_graph_viz import (
-	normalize_path,
-	path_to_module,
-)
+from dep_graph_viz.dep_graph_viz import normalize_path, path_to_module
 
 
 @pytest.mark.parametrize(
