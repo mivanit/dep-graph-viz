@@ -3,7 +3,7 @@ from copy import deepcopy
 import pytest
 
 # Import the functions to be tested
-from dep_graph_viz.dep_graph_viz import CONFIG, _process_config
+from dep_graph_viz.config import CONFIG, _process_config
 
 
 @pytest.fixture(autouse=True)
