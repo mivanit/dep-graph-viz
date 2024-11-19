@@ -65,7 +65,6 @@ def test_get_relevant_directories_invalid_root():
 		get_relevant_directories(root="non_existent_directory")
 
 
-
 # Import the functions to be tested
 
 
