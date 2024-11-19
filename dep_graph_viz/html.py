@@ -49,14 +49,15 @@ HTML_TEMPLATE: str = r"""
 </html>
 """
 
+
 def generate_html(dot_file_path: str, output_html_path: str):
     dot_content: str = ""
-    with open(dot_file_path, 'r') as dot_file:
+    with open(dot_file_path, "r") as dot_file:
         dot_content = dot_file.read()
-        
-    dot_content = dot_content.replace('`', '\\`')
+
+    dot_content = dot_content.replace("`", "\\`")
 
     html_content: str = HTML_TEMPLATE.replace("$$DOT_CONTENT$$", dot_content)
-    
-    with open(output_html_path, 'w') as output_file:
+
+    with open(output_html_path, "w") as output_file:
         output_file.write(html_content)

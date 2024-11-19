@@ -1,23 +1,23 @@
 import ast
 import glob
-import os
 import json
-from pathlib import Path
+import os
 import subprocess
-from typing import Literal, Any
-from dataclasses import dataclass
 from copy import deepcopy
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any, Literal
 
-from muutils.dictmagic import update_with_nested_dict, kwargs_to_nested_dict
 import networkx as nx
 import pydot
+from muutils.dictmagic import kwargs_to_nested_dict, update_with_nested_dict
 from networkx.drawing.nx_pydot import to_pydot
 
 from dep_graph_viz.config import _DEFAULT_CONFIG
 
 ORIG_DIR: str = os.getcwd()
 # *absolute* path of the root directory
-ROOT: str|None = None
+ROOT: str | None = None
 
 NodeType = Literal["root", "module_root", "module_dir", "dir", "module_file", "script"]
 
@@ -37,19 +37,26 @@ def _process_config(root: str = ".") -> None:
         if isinstance(value, str) and value.lower() in NULL_STRINGS:
             CONFIG["node"][key] = None
 
-
     # get git url and branch
-    if (CONFIG["url_prefix"] is None) and (CONFIG["auto_url_format"] is not None) and (root is not None):
+    if (
+        (CONFIG["url_prefix"] is None)
+        and (CONFIG["auto_url_format"] is not None)
+        and (root is not None)
+    ):
         try:
             # navigate to root
             orig_dir: str = os.getcwd()
             os.chdir(root)
             # get git remote url
-            git_remote_url: str = subprocess.check_output(
-                "git remote get-url origin",
-                shell=True,
-                encoding="utf-8",
-            ).strip().rstrip("/")
+            git_remote_url: str = (
+                subprocess.check_output(
+                    "git remote get-url origin",
+                    shell=True,
+                    encoding="utf-8",
+                )
+                .strip()
+                .rstrip("/")
+            )
             for rep_key, rep_val in CONFIG["auto_url_replace"].items():
                 git_remote_url = git_remote_url.replace(rep_key, rep_val)
             # get branch
@@ -58,7 +65,9 @@ def _process_config(root: str = ".") -> None:
                 shell=True,
                 encoding="utf-8",
             ).strip()
-            CONFIG["url_prefix"] = CONFIG["auto_url_format"].format(git_remote_url=git_remote_url, git_branch=git_branch)
+            CONFIG["url_prefix"] = CONFIG["auto_url_format"].format(
+                git_remote_url=git_remote_url, git_branch=git_branch
+            )
         except subprocess.CalledProcessError as e:
             print(f"could not get git info, not adding URLs: {e}")
             CONFIG["url_prefix"] = None
@@ -67,45 +76,49 @@ def _process_config(root: str = ".") -> None:
             os.chdir(orig_dir)
 
 
-
 def classify_node(path: str, root: str = ".") -> NodeType:
     # posixify path
     path = path.replace("\\", "/")
     rel_path: str = os.path.relpath(path, root)
     parent_dir: str = os.path.dirname(rel_path)
-    if parent_dir == '':
-        parent_dir = '.'
+    if parent_dir == "":
+        parent_dir = "."
 
     # error checking
     if not os.path.exists(path):
         raise FileNotFoundError(f"file not found: '{path}' for {path = } and {root = }")
-    
+
     if not os.path.exists(parent_dir):
-        raise FileNotFoundError(f"parent directory not found: '{parent_dir}' for {path = } and {root = }")
+        raise FileNotFoundError(
+            f"parent directory not found: '{parent_dir}' for {path = } and {root = }"
+        )
 
     if not os.path.exists(rel_path):
-        raise FileNotFoundError(f"relative path not found: '{rel_path}' for {path = } and {root = }")
+        raise FileNotFoundError(
+            f"relative path not found: '{rel_path}' for {path = } and {root = }"
+        )
 
     # if directory
     if os.path.isdir(path):
         files: list[str] = os.listdir(path)
         # handle root
-        if rel_path == '.':
-            if '__init__.py' in files:
-                return 'module_root'
+        if rel_path == ".":
+            if "__init__.py" in files:
+                return "module_root"
             else:
-                return 'root'
+                return "root"
         else:
             # module or ordinary directory
-            return 'module_dir' if '__init__.py' in files else 'dir'
-    elif rel_path.endswith('.py'):
+            return "module_dir" if "__init__.py" in files else "dir"
+    elif rel_path.endswith(".py"):
         # if a py file, module or script
-        if '__init__.py' in os.listdir(parent_dir):
-            return 'module_file'
+        if "__init__.py" in os.listdir(parent_dir):
+            return "module_file"
         else:
-            return 'script'
+            return "script"
     else:
         raise ValueError(f"unknown path type: {path}")
+
 
 @dataclass(frozen=True)
 class Node:
@@ -118,10 +131,10 @@ class Node:
 
     @classmethod
     def get_node(
-            cls,
-            path: str,
-            root: str = ".",
-        ) -> "Node":
+        cls,
+        path: str,
+        root: str = ".",
+    ) -> "Node":
         # rel_path: str = os.path.relpath(path, root).replace("\\", "/")
         if path == "":
             path = "."
@@ -131,13 +144,15 @@ class Node:
             rel_path = os.path.dirname(rel_path).removesuffix("/")
 
         node_type: NodeType = classify_node(path, root)
-        display_name: str = path_to_module(rel_path) if node_type.startswith("module") else rel_path
-        
-        url: str|None = None
-        url_prefix: str = CONFIG['url_prefix']
+        display_name: str = (
+            path_to_module(rel_path) if node_type.startswith("module") else rel_path
+        )
+
+        url: str | None = None
+        url_prefix: str = CONFIG["url_prefix"]
         if url_prefix:
             url = f"{url_prefix}{rel_path}"
-        
+
         return Node(
             orig_path=path,
             path=rel_path,
@@ -146,28 +161,33 @@ class Node:
             node_type=node_type,
             parent_dir=os.path.dirname(rel_path),
         )
-    
+
     def is_root(self) -> bool:
         return self.node_type in {"root", "module_root"}
-    
+
     def is_module(self) -> bool:
         return self.node_type.startswith("module")
-    
+
     def get_rank(self) -> int:
         return self.path.count("/")
-    
+
     def __hash__(self) -> int:
         return hash(self.path)
-    
+
     def __str__(self) -> str:
         if self.is_root():
             # absolute path of the root directory
-            return f'"{CONFIG["git_remote_url"]}"' if CONFIG.get("git_remote_url") else '"ROOT"'
+            return (
+                f'"{CONFIG["git_remote_url"]}"'
+                if CONFIG.get("git_remote_url")
+                else '"ROOT"'
+            )
         else:
             return f'"{self.display_name}"'
 
     def __repr__(self) -> str:
         return str(self)
+
 
 def get_imports(source_code: str) -> list[str]:
     """Get all the imports from a source code string"""
@@ -183,6 +203,7 @@ def get_imports(source_code: str) -> list[str]:
             imports.append(node.module)
     return imports
 
+
 def get_python_files(root: str = ".") -> list[str]:
     """Get all Python files in a directory and its subdirectories"""
     if not os.path.exists(root):
@@ -191,30 +212,28 @@ def get_python_files(root: str = ".") -> list[str]:
     glob_pattern: str = Path(root).as_posix().rstrip("/") + "/**/*.py"
     return glob.glob(glob_pattern, recursive=True)
 
+
 def get_relevant_directories(root: str = ".") -> set[str]:
     if not os.path.exists(root):
         raise FileNotFoundError(f"root directory not found: {root}")
 
     # get all directories with python files
     directories_with_py_files: set[str] = {
-        os.path.dirname(
-            os.path.relpath(file, root)
-        )
-        for file in get_python_files(root)
+        os.path.dirname(os.path.relpath(file, root)) for file in get_python_files(root)
     }
     # allocate output
     all_directories: set[str] = set(directories_with_py_files)
     all_directories.add(root)
-    
+
     # get every directory between root and known dir
     for directory in directories_with_py_files:
-        while directory and directory != '.':
+        while directory and directory != ".":
             parent_directory = os.path.dirname(directory)
             if parent_directory and parent_directory != directory:
                 all_directories.add(parent_directory)
             directory = parent_directory
 
-    all_directories.add('.')  # Ensure the root directory is included
+    all_directories.add(".")  # Ensure the root directory is included
 
     all_directories = set(map(normalize_path, all_directories))
 
@@ -224,8 +243,10 @@ def get_relevant_directories(root: str = ".") -> set[str]:
 def normalize_path(path: str) -> str:
     return path.replace("\\", "/")
 
+
 def path_to_module(path: str) -> str:
     return normalize_path(path).replace("/", ".").removesuffix(".py")
+
 
 def process_imports(imports: list[str], root: str) -> list[str]:
     root_module_path = root.replace("/", ".").replace("\\", ".")
@@ -238,9 +259,6 @@ def process_imports(imports: list[str], root: str) -> list[str]:
         )
         for x in imports
     ]
-
-
-
 
 
 def add_node(G: nx.MultiDiGraph, node: Node) -> None:
@@ -256,18 +274,18 @@ def add_node(G: nx.MultiDiGraph, node: Node) -> None:
     else:
         raise ValueError(f"node {node.path} already exists in the graph!")
 
+
 def build_graph(
-        python_files: list[str],
-        root: str = ".",
-        only_heirarchy: bool = False,
-    ) -> nx.MultiDiGraph:
+    python_files: list[str],
+    root: str = ".",
+    only_heirarchy: bool = False,
+) -> nx.MultiDiGraph:
     G: nx.MultiDiGraph = nx.MultiDiGraph()
     directories: set[str] = get_relevant_directories(root)
 
     # Add nodes for directories and root
     directory_nodes: dict[str, Node] = {
-        directory: Node.get_node(directory)
-        for directory in directories
+        directory: Node.get_node(directory) for directory in directories
     }
     for node in directory_nodes.values():
         add_node(G, node)
@@ -284,7 +302,6 @@ def build_graph(
             G.add_edge(parent_node, node, **CONFIG["edge"]["module_hierarchy"])
         else:
             G.add_edge(parent_node, node, **CONFIG["edge"]["hierarchy"])
-    
 
     for python_file in python_files:
         node: Node = Node.get_node(python_file)
@@ -298,10 +315,14 @@ def build_graph(
                 if node.parent_dir == parent_node.path
             ]
             if parents:
-                assert len(parents) == 1, f"multiple parents found for {node.path}: {parents}"
+                assert (
+                    len(parents) == 1
+                ), f"multiple parents found for {node.path}: {parents}"
                 module_parent: str = sorted(parents, key=len)[-1]
                 if CONFIG["edge"]["hierarchy"]:
-                    G.add_edge(module_parent, node.display_name, **CONFIG["edge"]["hierarchy"])
+                    G.add_edge(
+                        module_parent, node.display_name, **CONFIG["edge"]["hierarchy"]
+                    )
 
         if not only_heirarchy:
             # Read source code
@@ -312,16 +333,23 @@ def build_graph(
             imported_modules: list[str] = get_imports(source_code)
             for imported_module in imported_modules:
                 # Convert import to module name
-                imported_module_name = imported_module.replace("/", ".").replace("\\", ".")
+                imported_module_name = imported_module.replace("/", ".").replace(
+                    "\\", "."
+                )
                 if imported_module_name in G:
-                    edge_type = "inits" if classify_node(python_file, root) == 'module_dir' else "uses"
+                    edge_type = (
+                        "inits"
+                        if classify_node(python_file, root) == "module_dir"
+                        else "uses"
+                    )
                     if CONFIG["edge"].get(edge_type):
-                        G.add_edge(node.display_name, imported_module_name, **CONFIG["edge"][edge_type])
+                        G.add_edge(
+                            node.display_name,
+                            imported_module_name,
+                            **CONFIG["edge"][edge_type],
+                        )
 
     return G
-
-
-
 
 
 def write_dot(G: nx.DiGraph, output_filename: str) -> None:
@@ -331,19 +359,17 @@ def write_dot(G: nx.DiGraph, output_filename: str) -> None:
     P.write_raw(output_filename)
 
 
-
-
 def main(
-        root: str|None = None,
-        output: str = "output",
-        output_fmt: Literal["svg", "png"] = "svg",
-        config_file: str | None = None,
-        print_cfg: bool = False,
-        verbose: bool = False,
-        **kwargs,
-    ) -> None:
+    root: str | None = None,
+    output: str = "output",
+    output_fmt: Literal["svg", "png"] = "svg",
+    config_file: str | None = None,
+    print_cfg: bool = False,
+    verbose: bool = False,
+    **kwargs,
+) -> None:
     """Main function to generate and render a graphviz DOT file representing module dependencies
-    
+
     # Positional or keyword arguments
     - `root: str` (REQUIRED)
         root directory to search for Python files
@@ -362,12 +388,12 @@ def main(
     - `verbose: bool = False`
     - `h` or `help`
         print this help message and exit
-    
+
     # Configuration options
     either specify these in a json file, or separate levels with a dot. set to `None` to disable.
     - `url_prefix: str|None`
         manually add a prefix to the url. if set to `None`, will try to auto-detect from git
-    - `auto_url_format: str|None` 
+    - `auto_url_format: str|None`
         how to format a url given the git remote url and branch name.
         default: "{git_remote_url}/tree/{git_branch}/" (which works for github)
         set to `None` to disable. if both this and `url_prefix` are none, the svg will not have URLs
@@ -375,15 +401,15 @@ def main(
         string-replace pairs to apply to the git remote url before formatting it
         note: trailing slashes are also stripped
         default: `{".git": ""}`
-    - `node.dir: dict|None` 
+    - `node.dir: dict|None`
         kwargs for directory nodes
-    - `node.file: dict|None` 
+    - `node.file: dict|None`
         kwargs for file nodes
-    - `edge.hierarchy: dict|None` 
+    - `edge.hierarchy: dict|None`
         kwargs for hierarchy edges (i.e. file A is part of module B)
-    - `edge.uses: dict|None` 
+    - `edge.uses: dict|None`
         kwargs for uses edges (i.e. file A imports module B for using it)
-    - `edge.inits: dict|None` 
+    - `edge.inits: dict|None`
         kwargs for init edges (i.e. __init__.py file imports something from downstream of itself)
     - `dot_attrs: dict`
         kwargs for the dot graph itself
@@ -405,8 +431,10 @@ def main(
     # update config from kwargs
     if len(kwargs) > 0:
         update_with_nested_dict(
-            CONFIG, 
-            kwargs_to_nested_dict(kwargs, transform_key=lambda x: x.lstrip("-"), sep="."),
+            CONFIG,
+            kwargs_to_nested_dict(
+                kwargs, transform_key=lambda x: x.lstrip("-"), sep="."
+            ),
         )
 
     # process by converting none types, auto-detecting url_prefix from git if needed
@@ -419,14 +447,14 @@ def main(
         print(json.dumps(CONFIG, indent=2))
         exit()
 
-    # print config and exit    
+    # print config and exit
     if print_cfg:
         print(json.dumps(CONFIG, indent=2))
         exit()
-    
+
     if root is None:
         raise ValueError("root is required")
-    
+
     # change directory
     os.chdir(root)
     global ROOT
@@ -435,11 +463,11 @@ def main(
     print("# getting python files...")
     python_files: list[str] = get_python_files()
     print(f"\t found {len(python_files)} python files")
-    
+
     print("# building graph...")
     G: nx.MultiDiGraph = build_graph(python_files)
     print(f"\t built graph with {len(G.nodes)} nodes and {len(G.edges)} edges")
-    
+
     # change back to original directory
     os.chdir(ORIG_DIR)
     output_file_dot: str = f"{output}.dot"
@@ -447,13 +475,16 @@ def main(
     write_dot(G, f"{output_file_dot}")
 
     if output_fmt == "html":
-        print(f"# generating html...")
+        print("# generating html...")
         from dep_graph_viz.html import generate_html
+
         generate_html(output_file_dot, f"{output}.html")
     else:
-        print(f"# running dot...")
-        print(f"\tcommand:")
-        cmd: str = f"dot -T{output_fmt} {output_file_dot} -o {output}.{output_fmt} {'-v' if verbose else ''}"
+        print("# running dot...")
+        print("\tcommand:")
+        cmd: str = (
+            f"dot -T{output_fmt} {output_file_dot} -o {output}.{output_fmt} {'-v' if verbose else ''}"
+        )
         print(f"\t$ {cmd}")
         os.system(cmd)
 
