@@ -33,7 +33,7 @@ NULL_STRINGS: set[str] = {"none", "null"}
 CONFIG: dict[str, Any] = deepcopy(_DEFAULT_CONFIG)
 
 
-def _process_config(root: str|None = ".") -> None:
+def _process_config(root: str|None = ".", config: dict|None = None) -> None:
     """converts none types, auto-detects url_prefix from git if needed
     
     - mapping null values: in CONFIG, a value under the `CONFIG["edge"]` or `CONFIG["node"]` dicts that matches `NULL_STRINGS` will be converted to `None`
@@ -51,23 +51,28 @@ def _process_config(root: str|None = ".") -> None:
     global variable `CONFIG`, specifically:
      - `CONFIG["edge"][*]` and `CONFIG["node"][*]` which match `NULL_STRINGS` will be converted to `None`
      - `CONFIG["url_prefix"]` will be set to a formatted URL if it is `None` and `CONFIG["auto_url_format"]` is not `None`
-    """    
-    global CONFIG
+    """
+    if config is None:
+        global CONFIG
+        config = CONFIG
+
+    print(config["edge"])
     # convert none/null items
     for k_conv in ("edge", "node"):
-        for key, value in CONFIG[k_conv].items():
+        for key, value in config[k_conv].items():
             if isinstance(value, str):
                 if value.lower() in NULL_STRINGS:
-                    CONFIG[k_conv][key] = None
+                    config[k_conv][key] = None
             elif isinstance(value, dict):
                 for sub_key, sub_value in value.items():
                     if isinstance(sub_value, str) and sub_value.lower() in NULL_STRINGS:
-                        CONFIG[k_conv][key][sub_key] = None
+                        config[k_conv][key][sub_key] = None
+                        print(f"converted {k_conv}.{key}.{sub_key} to None")
 
     # get git url and branch
     if (
-        (CONFIG["url_prefix"] is None)
-        and (CONFIG["auto_url_format"] is not None)
+        (config["url_prefix"] is None)
+        and (config["auto_url_format"] is not None)
         and (root is not None)
     ):
         try:
@@ -84,7 +89,7 @@ def _process_config(root: str|None = ".") -> None:
                 .strip()
                 .rstrip("/")
             )
-            for rep_key, rep_val in CONFIG["auto_url_replace"].items():
+            for rep_key, rep_val in config["auto_url_replace"].items():
                 git_remote_url = git_remote_url.replace(rep_key, rep_val)
             # get branch
             git_branch: str = subprocess.check_output(
@@ -92,12 +97,12 @@ def _process_config(root: str|None = ".") -> None:
                 shell=True,
                 encoding="utf-8",
             ).strip()
-            CONFIG["url_prefix"] = CONFIG["auto_url_format"].format(
+            config["url_prefix"] = config["auto_url_format"].format(
                 git_remote_url=git_remote_url, git_branch=git_branch
             )
         except subprocess.CalledProcessError as e:
             print(f"could not get git info, not adding URLs: {e}")
-            CONFIG["url_prefix"] = None
+            config["url_prefix"] = None
         finally:
             # go back to original directory
             os.chdir(orig_dir)

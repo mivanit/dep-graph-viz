@@ -1,3 +1,4 @@
+from copy import deepcopy
 import os
 import subprocess
 from unittest import mock
@@ -22,64 +23,95 @@ from dep_graph_viz.dep_graph_viz import (
 def reset_config():
     """Reset the CONFIG dictionary to its default state before each test."""
     global CONFIG
-    original_config = CONFIG.copy()
+    original_config = deepcopy(CONFIG)
     yield
-    CONFIG = original_config.copy()
+    CONFIG = deepcopy(original_config)
 
-def test_normalize_path():
-    assert normalize_path(r"C:\path\to\file") == "C:/path/to/file"
-    assert normalize_path("/path/to/file") == "/path/to/file"
-    assert normalize_path("path\\with/mixed\\separators") == "path/with/mixed/separators"
-    assert normalize_path("") == ""
-    assert normalize_path("relative\\path") == "relative/path"
+@pytest.mark.parametrize(
+    "path, expected",
+    [
+        (r"C:\path\to\file", "C:/path/to/file"),
+        ("/path/to/file", "/path/to/file"),
+        ("path\\with/mixed\\separators", "path/with/mixed/separators"),
+        ("", ""),
+        ("relative\\path", "relative/path"),
+    ],
+)
+def test_normalize_path(path, expected):
+    normalized_path = normalize_path(path)
+    assert normalized_path == expected, f"{path = }, {expected = }, {normalized_path = }"
 
-def test_path_to_module():
-    assert path_to_module("module/submodule/file.py") == "module.submodule.file"
-    assert path_to_module(r"module\submodule\file.py") == "module.submodule.file"
-    assert path_to_module("file.py") == "file"
-    assert path_to_module("dir.with.dots/file.py") == "dir.with.dots.file"
-    assert path_to_module("file") == "file"
-    assert path_to_module("file.pyc") == "file.pyc"
-    assert path_to_module("") == ""
+@pytest.mark.parametrize(
+    "path, expected",
+    [
+        ("module/submodule/file.py", "module.submodule.file"),
+        (r"module\submodule\file.py", "module.submodule.file"),
+        ("file.py", "file"),
+        ("dir.with.dots/file.py", "dir.with.dots.file"),
+        ("file", "file"),
+        ("file.pyc", "file.pyc"),
+        ("", ""),
+    ],
+)
+def test_path_to_module(path, expected):
+    path_as_module = path_to_module(path)
+    assert path_as_module == expected, f"{path = }, {expected = }, {path_as_module = }"
 
-def test_get_imports():
-    source_code = '''
+
+@pytest.mark.parametrize(
+    "source, expected",
+    [
+        ("import os", ["os"]),
+        ("import os\nimport sys", ["os", "sys"]),
+        ("from collections import defaultdict", ["collections"]),
+        ("from math import sqrt", ["math"]),
+        ("import module.submodule", ["module.submodule"]),
+        (
+            """
 import os
 import sys
 from collections import defaultdict
 from math import sqrt
-'''
-    imports = get_imports(source_code)
-    assert "os" in imports
-    assert "sys" in imports
-    assert "collections" in imports
-    assert "math" in imports
-    assert len(imports) == 4
-
-    source_code = '''
+""",
+            ["os", "sys", "collections", "math"],
+        ),
+        (
+            """
 # No imports here
 def foo():
     pass
-'''
-    imports = get_imports(source_code)
-    assert imports == []
-
-    source_code = '''
+""",
+            [],
+        ),
+        (
+            """
+import os
+import sys
+from collections import defaultdict
+from math import sqrt
 import module.submodule
 from package.module import Class
-'''
-    imports = get_imports(source_code)
-    assert "module.submodule" in imports
-    assert "package.module" in imports
-    assert len(imports) == 2
+""",
+            ["os", "sys", "collections", "math", "module.submodule", "package.module"],
+        ),
+        ("", []),
+    ],
+)
+def test_get_imports(source, expected):
+    assert get_imports(source) == expected, f"{expected = }\nsource = '''\n{source}'''"
 
-    source_code = ''  # Empty source code
-    imports = get_imports(source_code)
-    assert imports == []
 
-    source_code = 'import'  # Incomplete import statement
-    with pytest.raises(SyntaxError):
-        get_imports(source_code)
+
+@pytest.mark.parametrize(
+    "source, expected_exception",
+    [
+        ("import", SyntaxError),
+    ],
+)
+def test_get_imports_error(source, expected_exception):
+    with pytest.raises(expected_exception):
+        get_imports(source)
+
 
 def test_get_python_files(tmp_path):
     # Create temporary directory structure
@@ -132,12 +164,12 @@ def test_process_config_convert_none():
     CONFIG["edge"]["thing"] = {"color": "none", "style": "dashed"}
     CONFIG["node"]["otherthing"] = {"shape": "null", "label": "Node"}
 
-    _process_config()
+    _process_config(config=CONFIG)
 
-    assert CONFIG["edge"]["thing"]["color"] is None
     assert CONFIG["edge"]["thing"]["style"] == "dashed"
-    assert CONFIG["node"]["otherthing"]["shape"] is None
+    assert CONFIG["edge"]["thing"]["color"] is None
     assert CONFIG["node"]["otherthing"]["label"] == "Node"
+    assert CONFIG["node"]["otherthing"]["shape"] is None
 
 
 def test_process_config_no_auto_url_format():
