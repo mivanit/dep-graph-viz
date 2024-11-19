@@ -19,23 +19,45 @@ ORIG_DIR: str = os.getcwd()
 # *absolute* path of the root directory
 ROOT: str | None = None
 
-NodeType = Literal["root", "module_root", "module_dir", "dir", "module_file", "script"]
+NodeType = Literal[
+    "module_root", # root if __init__.py is present
+    "root", # root if no __init__.py
+    "module_dir", # non-root directory with __init__.py
+    "dir", # non-root directory without __init__.py
+    "module_file", # file in a module (in a directory with __init__.py)
+    "script", # standalone file (in a directory without __init__.py)
+]
 
 NULL_STRINGS: set[str] = {"none", "null"}
 
 CONFIG: dict[str, Any] = deepcopy(_DEFAULT_CONFIG)
 
 
-def _process_config(root: str = ".") -> None:
-    """converts none types, auto-detects url_prefix from git if needed"""
+def _process_config(root: str|None = ".") -> None:
+    """converts none types, auto-detects url_prefix from git if needed
+    
+    - mapping null values: in CONFIG, a value under the `CONFIG["edge"]` or `CONFIG["node"]` dicts that matches `NULL_STRINGS` will be converted to `None`
+    - auto-generating url: if `CONFIG["url_prefix"]` is `None`, `CONFIG["auto_url_format"]` is not `None`, and `root` is not `None`, the git remote url and branch will be auto-detected and formatted into a URL
+    
+    # Parameters:
+     - `root : str`   
+        place to look for git info. if `None`, will not try to auto-detect git info
+       (defaults to `"."`)
+    
+    # Returns:
+     - `None`
+    
+    # Modifies:
+    global variable `CONFIG`, specifically:
+     - `CONFIG["edge"][*]` and `CONFIG["node"][*]` which match `NULL_STRINGS` will be converted to `None`
+     - `CONFIG["url_prefix"]` will be set to a formatted URL if it is `None` and `CONFIG["auto_url_format"]` is not `None`
+    """    
     global CONFIG
     # convert none/null items
-    for key, value in CONFIG["edge"].items():
-        if isinstance(value, str) and value.lower() in NULL_STRINGS:
-            CONFIG["edge"][key] = None
-    for key, value in CONFIG["node"].items():
-        if isinstance(value, str) and value.lower() in NULL_STRINGS:
-            CONFIG["node"][key] = None
+    for k_conv in ("edge", "node"):
+        for key, value in CONFIG[k_conv].items():
+            if isinstance(value, str) and value.lower() in NULL_STRINGS:
+                CONFIG[k_conv][key] = None
 
     # get git url and branch
     if (
@@ -123,7 +145,8 @@ def classify_node(path: str, root: str = ".") -> NodeType:
 @dataclass(frozen=True)
 class Node:
     orig_path: str
-    path: str
+    rel_path: str
+    aliases: set[str]
     display_name: str
     url: str | None = None
     node_type: NodeType | None = None
@@ -135,32 +158,55 @@ class Node:
         path: str,
         root: str = ".",
     ) -> "Node":
-        # rel_path: str = os.path.relpath(path, root).replace("\\", "/")
         if path == "":
             path = "."
+
+        # set up aliases
+        aliases: set[str] = {path}
+
+        # path relative to root
         rel_path: str = normalize_path(os.path.relpath(path, root))
-        # check for filename is __init__.py
+        aliases.add(rel_path)
         if os.path.basename(rel_path) == "__init__.py":
             rel_path = os.path.dirname(rel_path).removesuffix("/")
+            aliases.add(rel_path)
 
+        # node type for formatting
         node_type: NodeType = classify_node(path, root)
+
+        # unique display name
         display_name: str = (
             path_to_module(rel_path) if node_type.startswith("module") else rel_path
         )
+        aliases.add(display_name)
+        if node_type in {"module_root", "module_dir"}:
+            display_name = 'ROOT'
 
+        # get parent dir
+        parent_dir: str = normalize_path(os.path.dirname(rel_path))
+        if not parent_dir:
+            parent_dir = "."
+
+        # get url if needed
         url: str | None = None
         url_prefix: str = CONFIG["url_prefix"]
         if url_prefix:
             url = f"{url_prefix}{rel_path}"
 
-        return Node(
+        # assemble and return node
+        node: Node = Node(
             orig_path=path,
-            path=rel_path,
+            rel_path=rel_path,
+            aliases=aliases,
             display_name=display_name,
             url=url,
             node_type=node_type,
-            parent_dir=os.path.dirname(rel_path),
+            parent_dir=parent_dir,
         )
+
+        print(repr(node))
+
+        return node
 
     def is_root(self) -> bool:
         return self.node_type in {"root", "module_root"}
@@ -169,10 +215,10 @@ class Node:
         return self.node_type.startswith("module")
 
     def get_rank(self) -> int:
-        return self.path.count("/")
+        return self.rel_path.count("/")
 
     def __hash__(self) -> int:
-        return hash(self.path)
+        return hash(self.rel_path)
 
     def __str__(self) -> str:
         if self.is_root():
@@ -184,13 +230,25 @@ class Node:
             )
         else:
             return f'"{self.display_name}"'
-
+    
     def __repr__(self) -> str:
-        return str(self)
+        kwargs: str = ", ".join([
+            f"{k}='{self.__dict__[k]}'" if isinstance(self.__dict__[k], str) else f"{k}={self.__dict__[k]}"
+            for k in (
+                "display_name",
+                "node_type",
+                "rel_path",
+                "orig_path",
+                "aliases",
+                "parent_dir",
+            )
+        ])
+        return f"Node({kwargs})"
+
 
 
 def get_imports(source_code: str) -> list[str]:
-    """Get all the imports from a source code string"""
+    "Get all the imports from a source code string"
     tree: ast.Module = ast.parse(source_code)
     imports: list[str] = []
     for node in ast.walk(tree):
@@ -205,7 +263,7 @@ def get_imports(source_code: str) -> list[str]:
 
 
 def get_python_files(root: str = ".") -> list[str]:
-    """Get all Python files in a directory and its subdirectories"""
+    "Get all Python files in a directory and its subdirectories"
     if not os.path.exists(root):
         raise FileNotFoundError(f"root directory not found: {root}")
 
@@ -214,6 +272,7 @@ def get_python_files(root: str = ".") -> list[str]:
 
 
 def get_relevant_directories(root: str = ".") -> set[str]:
+    "from a root, get a set of all directories with python files in them"
     if not os.path.exists(root):
         raise FileNotFoundError(f"root directory not found: {root}")
 
@@ -234,31 +293,35 @@ def get_relevant_directories(root: str = ".") -> set[str]:
             directory = parent_directory
 
     all_directories.add(".")  # Ensure the root directory is included
-
+    if "" in all_directories:
+        all_directories.remove("")  # Remove empty string
     all_directories = set(map(normalize_path, all_directories))
 
+    print(all_directories)
+    print("="*100)
     return all_directories
 
 
 def normalize_path(path: str) -> str:
+    "convert any path to a posix path"
     return path.replace("\\", "/")
 
 
 def path_to_module(path: str) -> str:
+    "convert a path to a python file to a module name"
     return normalize_path(path).replace("/", ".").removesuffix(".py")
 
 
-def process_imports(imports: list[str], root: str) -> list[str]:
-    root_module_path = root.replace("/", ".").replace("\\", ".")
-    return [
-        (
-            path_to_module(x)
-            .removeprefix(root_module_path)
-            .removeprefix(".")  # ???
-            .removesuffix(".__init__")  # init becomes the module name
-        )
-        for x in imports
-    ]
+# def process_imports(imports: list[str], root: str) -> list[str]:
+#     root_module_path = normalize_path(root).replace("/", ".") + "."
+#     return [
+#         (
+#             path_to_module(normalize_path(x))
+#             .removeprefix(root_module_path)
+#             .removesuffix(".__init__")  # init becomes the module name
+#         )
+#         for x in imports
+#     ]
 
 
 def add_node(G: nx.MultiDiGraph, node: Node) -> None:
@@ -279,6 +342,7 @@ def build_graph(
     python_files: list[str],
     root: str = ".",
     only_heirarchy: bool = False,
+    edge_config: dict[str, Any] = CONFIG["edge"],
 ) -> nx.MultiDiGraph:
     G: nx.MultiDiGraph = nx.MultiDiGraph()
     directories: set[str] = get_relevant_directories(root)
@@ -292,36 +356,40 @@ def build_graph(
 
     # add folder hierarchy
     for directory, node in directory_nodes.items():
+        # no parent of the root
         if node.is_root():
             continue
-        parent_path: str = normalize_path(os.path.dirname(directory))
-        if not parent_path:
-            parent_path = "."
-        parent_node: Node = directory_nodes[parent_path]
+        
+        # get parent node
+        parent_node: Node = directory_nodes[node.parent_dir]
+
+        # figure out edge type and add it
+        edge_type: str
         if parent_node.is_module() and node.is_module():
-            G.add_edge(parent_node, node, **CONFIG["edge"]["module_hierarchy"])
+            edge_type = "module_hierarchy"
         else:
-            G.add_edge(parent_node, node, **CONFIG["edge"]["hierarchy"])
+            edge_type = "hierarchy"
+        G.add_edge(parent_node, node, **edge_config[edge_type])
 
     for python_file in python_files:
         node: Node = Node.get_node(python_file)
         add_node(G, node)
 
-        # Get hierarchy
+        # add file hierarchy
         if node.node_type not in {"root", "module_root"}:
             parents: list[str] = [
                 parent_node.display_name
                 for parent_node in directory_nodes.values()
-                if node.parent_dir == parent_node.path
+                if node.parent_dir == parent_node.rel_path
             ]
             if parents:
                 assert (
                     len(parents) == 1
                 ), f"multiple parents found for {node.path}: {parents}"
                 module_parent: str = sorted(parents, key=len)[-1]
-                if CONFIG["edge"]["hierarchy"]:
+                if edge_config["hierarchy"]:
                     G.add_edge(
-                        module_parent, node.display_name, **CONFIG["edge"]["hierarchy"]
+                        module_parent, node.display_name, **edge_config["hierarchy"]
                     )
 
         if not only_heirarchy:
@@ -331,6 +399,7 @@ def build_graph(
 
             # Get imports
             imported_modules: list[str] = get_imports(source_code)
+
             for imported_module in imported_modules:
                 # Convert import to module name
                 imported_module_name = imported_module.replace("/", ".").replace(
@@ -342,11 +411,11 @@ def build_graph(
                         if classify_node(python_file, root) == "module_dir"
                         else "uses"
                     )
-                    if CONFIG["edge"].get(edge_type):
+                    if edge_config.get(edge_type):
                         G.add_edge(
                             node.display_name,
                             imported_module_name,
-                            **CONFIG["edge"][edge_type],
+                            **edge_config[edge_type],
                         )
 
     return G
@@ -486,7 +555,7 @@ def main(
             f"dot -T{output_fmt} {output_file_dot} -o {output}.{output_fmt} {'-v' if verbose else ''}"
         )
         print(f"\t$ {cmd}")
-        os.system(cmd)
+        subprocess.run(cmd, check=True)
 
     print("# done!")
 

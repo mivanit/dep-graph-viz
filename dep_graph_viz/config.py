@@ -2,6 +2,8 @@ _DEFAULT_CONFIG: dict = {
     "url_prefix": None,
     "auto_url_format": "{git_remote_url}/tree/{git_branch}/",
     "auto_url_replace": {".git": ""},
+	"strip_module_prefix": True,
+	"include_externals": False,
     "edge": {
         "module_hierarchy": {
             "color": "black",
