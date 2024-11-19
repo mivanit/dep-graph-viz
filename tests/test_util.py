@@ -35,6 +35,15 @@ def reset_config():
         ("path\\with/mixed\\separators", "path/with/mixed/separators"),
         ("", ""),
         ("relative\\path", "relative/path"),
+        ("C:\\\\path\\\\to\\\\file", "C://path//to//file"),
+        ("/path/with/trailing/slash/", "/path/with/trailing/slash/"),
+        ("\\path\\starting\\with\\backslash", "/path/starting/with/backslash"),
+        ("path/with/./dot", "path/with/./dot"),
+        ("path/with/../dotdot", "path/with/../dotdot"),
+        ("path with spaces\\file", "path with spaces/file"),
+        ("path/with/üñíçødé/characters", "path/with/üñíçødé/characters"),
+        ("\\", "/"),
+        ("//", "//"),
     ],
 )
 def test_normalize_path(path, expected):
@@ -47,16 +56,39 @@ def test_normalize_path(path, expected):
         ("module/submodule/file.py", "module.submodule.file"),
         (r"module\submodule\file.py", "module.submodule.file"),
         ("file.py", "file"),
-        ("dir.with.dots/file.py", "dir.with.dots.file"),
         ("file", "file"),
-        ("file.pyc", "file.pyc"),
         ("", ""),
+        ("module/submodule/file", "module.submodule.file"),
+        ("/absolute/path/to/module.py", "absolute.path.to.module"),
+        ("module/submodule/__init__.py", "module.submodule.__init__"),
+        ("module/submodule/__main__.py", "module.submodule.__main__"),
     ],
 )
 def test_path_to_module(path, expected):
     path_as_module = path_to_module(path)
     assert path_as_module == expected, f"{path = }, {expected = }, {path_as_module = }"
 
+
+
+@pytest.mark.parametrize(
+    "path, expected_exception",
+    [
+        ("module/submodule/file.name.with.dots.py", ValueError),
+        ("module.with.dots/file.py", ValueError),
+        ("file.name.with.dots.py", ValueError),
+        ("file.tar.gz", ValueError),
+        (".../file.py", ValueError),
+        ("module/.hidden/file.py", ValueError),
+        ("dir.with.dots/file.py", ValueError),
+        ("file.pyc", ValueError),
+        ("dir.with.dots/file.py", ValueError),
+        (".file.py", ValueError),
+        ("./file.py", ValueError),
+    ],
+)
+def test_path_to_module_except(path, expected_exception):
+    with pytest.raises(expected_exception):
+        path_to_module(path)
 
 @pytest.mark.parametrize(
     "source, expected",
@@ -95,6 +127,74 @@ from package.module import Class
             ["os", "sys", "collections", "math", "module.submodule", "package.module"],
         ),
         ("", []),
+        (
+            """
+import os  # This is a comment
+from sys import path  # Another comment
+""",
+            ["os", "sys"],
+        ),
+        (
+            """
+def func():
+    import math
+    from collections import deque
+""",
+            ["math", "collections"],
+        ),
+        (
+            """
+from ..parent import parent_module
+""",
+            ["parent"],
+        ),
+        (
+            """
+import package.module.submodule
+""",
+            ["package.module.submodule"],
+        ),
+        (
+            """
+import numpy as np
+import pandas as pd
+""",
+            ["numpy", "pandas"],
+        ),
+        (
+            """
+from package import *
+""",
+            ["package"],
+        ),
+        (
+            """
+try:
+    import optional_module
+except ImportError:
+    optional_module = None
+""",
+            ["optional_module"],
+        ),
+        (
+            """
+if CONDITION:
+    import conditional_module
+""",
+            ["conditional_module"],
+        ),
+        (
+            """
+import 你好
+""",
+            ["你好"],
+        ),
+        (
+            """
+from __future__ import print_function
+""",
+            ["__future__"],
+        ),
     ],
 )
 def test_get_imports(source, expected):
@@ -106,6 +206,20 @@ def test_get_imports(source, expected):
     "source, expected_exception",
     [
         ("import", SyntaxError),
+        ("def func(:\n pass", SyntaxError),
+        ("import os as", SyntaxError),
+        ("from math import", SyntaxError),
+        ("import $invalid_module", SyntaxError),
+        ("def func():\n    import", SyntaxError),
+        (
+            """
+import os
+def broken():
+    return (
+""",
+            SyntaxError,
+        ),
+        ("from . import sibling_module", ValueError),
     ],
 )
 def test_get_imports_error(source, expected_exception):
@@ -195,11 +309,6 @@ def test_process_config_preserve_url_prefix():
 
     assert CONFIG["url_prefix"] == "https://example.com/repo/"
 
-
-def test_get_imports_syntax_error():
-    source_code = "def func(:\n pass"
-    with pytest.raises(SyntaxError):
-        get_imports(source_code)
 
 def test_get_python_files_invalid_root():
     with pytest.raises(FileNotFoundError):

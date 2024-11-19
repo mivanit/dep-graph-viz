@@ -115,7 +115,11 @@ def normalize_path(path: str) -> str:
 
 def path_to_module(path: str) -> str:
     "convert a path to a python file to a module name"
-    return normalize_path(path).replace("/", ".").removesuffix(".py")
+    norm_path: str = normalize_path(path).removesuffix(".py").removeprefix("/")
+    if "." in norm_path:
+        raise ValueError(f"path contains '.', invalid: '{path}'")
+
+    return norm_path.replace("/", ".")
 
 def add_node(G: nx.MultiDiGraph, node: "Node") -> None:
     """Add a node to the graph with the given type and optional URL."""
@@ -139,10 +143,15 @@ def get_imports(source_code: str) -> list[str]:
         # Check if node is an import statement
         if isinstance(node, ast.Import):
             for alias in node.names:
+                if alias.name is None:
+                    raise ValueError(f"node.names[alias].name is None: {node = } {alias = }")
                 imports.append(alias.name)
         # Check if node is a from ... import ... statement
         elif isinstance(node, ast.ImportFrom):
+            if node.module is None:
+                raise ValueError(f"module name is None: {node = }")
             imports.append(node.module)
+
     return imports
 
 
