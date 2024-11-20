@@ -1,0 +1,625 @@
+  docs for dep_graph_viz v0.1.0
+
+Contents
+
+dep-graph-viz
+
+visualize a dependency graph for a python library
+
+[]
+
+Given a python library (or any folder of python files), create a graph
+of the dependencies between the modules. By default:
+
+-   parent folder has a black arrow to child folders or files
+-   imports between files are red arrows
+-   imports in an __init__.py from a downstream file are dashed blue
+    arrows
+
+The script also lets the git remote url be auto-detected, making all the
+nodes in the graph into clickable links (for svg, at least)
+
+[]
+
+(you can view more examples in the examples folder)
+
+Usage
+
+To generate a graph:
+
+    python -m dep_graph_viz <library_path> <output_base> [optional-arguments]
+
+To print help message:
+
+    python -m dep_graph_viz -h
+
+Below are the contents of that help message:
+
+Positional or keyword arguments
+
+-   root: str (REQUIRED) root directory to search for Python files
+-   output: str output filename (without extension) default: "output"
+-   output_fmt: Literal["svg", "png"] output format for running dot
+    default: "svg"
+
+Keyword-only arguments
+
+-   config_file: str | None = None path to a JSON file containing
+    configuration options
+-   print_cfg: bool = False whether to print the configuration after
+    loading it – if this is set, the program will exit after printing
+    the config
+-   verbose: bool = False
+-   h or help print this help message and exit
+
+Configuration options
+
+Either specify these in a json file, or separate levels with a dot. -
+url_prefix: str|None manually add a prefix to the url. if set to None,
+will try to auto-detect from git - auto_url_format: str|None how to
+format a url given the git remote url and branch name. default:
+“{git_remote_url}/tree/{git_branch}/” (which works for github) set to
+None to disable. if both this and url_prefix are none, the svg will not
+have URLs - auto_url_replace: dict[str,str] string-replace pairs to
+apply to the git remote url before formatting it note: trailing slashes
+are also stripped default: {".git": ""} - node.dir: dict|None kwargs for
+directory nodes - node.file: dict|None kwargs for file nodes -
+edge.heirarchy: dict|None kwargs for hierarchy edges (i.e. file A is
+part of module B) - edge.uses: dict|None kwargs for uses edges
+(i.e. file A imports module B for using it) - edge.inits: dict|None
+kwargs for init edges (i.e. init.py file imports something from
+downstream of itself) - dot_attrs: dict kwargs for the dot graph itself
+default: {'rankdir': 'TB'} (top to bottom) you can change it via
+dot_attrs.rankdir=LR for left to right, etc.
+
+To modify an element of a dict without specifying the whole dict, you
+can use “.” as a level separator:
+
+    --edge.uses.color=green
+
+Installation
+
+Install via pip from github
+
+    pip install git+https://github.com/mivanit/dep-graph-viz
+
+You also need GraphViz, specifically the dot layout engine, installed
+and in your PATH.
+
+Submodules
+
+-   dep_graph_viz
+-   config
+-   html
+-   util
+
+API Documentation
+
+-   main
+
+View Source on GitHub
+
+dep_graph_viz
+
+dep-graph-viz
+
+visualize a dependency graph for a python library
+
+[]
+
+Given a python library (or any folder of python files), create a graph
+of the dependencies between the modules. By default:
+
+-   parent folder has a black arrow to child folders or files
+-   imports between files are red arrows
+-   imports in an __init__.py from a downstream file are dashed blue
+    arrows
+
+The script also lets the git remote url be auto-detected, making all the
+nodes in the graph into clickable links (for svg, at least)
+
+[]
+
+(you can view more examples in the examples folder)
+
+Usage
+
+To generate a graph:
+
+    python -m dep_graph_viz <library_path> <output_base> [optional-arguments]
+
+To print help message:
+
+    python -m dep_graph_viz -h
+
+Below are the contents of that help message:
+
+Positional or keyword arguments
+
+-   root: str (REQUIRED) root directory to search for Python files
+-   output: str output filename (without extension) default: "output"
+-   output_fmt: Literal["svg", "png"] output format for running dot
+    default: "svg"
+
+Keyword-only arguments
+
+-   config_file: str | None = None path to a JSON file containing
+    configuration options
+-   print_cfg: bool = False whether to print the configuration after
+    loading it – if this is set, the program will exit after printing
+    the config
+-   verbose: bool = False
+-   h or help print this help message and exit
+
+Configuration options
+
+Either specify these in a json file, or separate levels with a dot. -
+url_prefix: str|None manually add a prefix to the url. if set to None,
+will try to auto-detect from git - auto_url_format: str|None how to
+format a url given the git remote url and branch name. default:
+“{git_remote_url}/tree/{git_branch}/” (which works for github) set to
+None to disable. if both this and url_prefix are none, the svg will not
+have URLs - auto_url_replace: dict[str,str] string-replace pairs to
+apply to the git remote url before formatting it note: trailing slashes
+are also stripped default: {".git": ""} - node.dir: dict|None kwargs for
+directory nodes - node.file: dict|None kwargs for file nodes -
+edge.heirarchy: dict|None kwargs for hierarchy edges (i.e. file A is
+part of module B) - edge.uses: dict|None kwargs for uses edges
+(i.e. file A imports module B for using it) - edge.inits: dict|None
+kwargs for init edges (i.e. init.py file imports something from
+downstream of itself) - dot_attrs: dict kwargs for the dot graph itself
+default: {'rankdir': 'TB'} (top to bottom) you can change it via
+dot_attrs.rankdir=LR for left to right, etc.
+
+To modify an element of a dict without specifying the whole dict, you
+can use “.” as a level separator:
+
+    --edge.uses.color=green
+
+Installation
+
+Install via pip from github
+
+    pip install git+https://github.com/mivanit/dep-graph-viz
+
+You also need GraphViz, specifically the dot layout engine, installed
+and in your PATH.
+
+View Source on GitHub
+
+def main
+
+    (
+        root: str | None = None,
+        module: str | None = None,
+        output: str = 'output',
+        output_fmt: Literal['svg', 'png'] = 'svg',
+        config_file: str | None = None,
+        print_cfg: bool = False,
+        verbose: bool = False,
+        **kwargs
+    ) -> None
+
+View Source on GitHub
+
+Main function to generate and render a graphviz DOT file representing
+module dependencies
+
+Keyword-only arguments
+
+-   root: str (this arg or module is REQUIRED) root directory to search
+    for Python files
+-   module: str (this arg or root is REQUIRED) name of module to
+    generate graph for – must be importable in the current environment
+-   output: str output filename (without extension) default: "output"
+-   output_fmt: Literal["svg", "png"] output format for running dot
+    default: "svg"
+-   config_file: str | None = None path to a JSON file containing
+    configuration options
+-   print_cfg: bool = False whether to print the configuration after
+    loading it – if this is set, the program will exit after printing
+    the config
+-   verbose: bool = False
+-   h or help print this help message and exit
+
+Configuration options
+
+either specify these in a json file, or separate levels with a dot. set
+to None to disable. - url_prefix: str|None manually add a prefix to the
+url. if set to None, will try to auto-detect from git -
+auto_url_format: str|None how to format a url given the git remote url
+and branch name. default: “{git_remote_url}/tree/{git_branch}/” (which
+works for github) set to None to disable. if both this and url_prefix
+are none, the svg will not have URLs - auto_url_replace: dict[str,str]
+string-replace pairs to apply to the git remote url before formatting it
+note: trailing slashes are also stripped default: {".git": ""} -
+node.dir: dict|None kwargs for directory nodes - node.file: dict|None
+kwargs for file nodes - edge.hierarchy: dict|None kwargs for hierarchy
+edges (i.e. file A is part of module B) - edge.uses: dict|None kwargs
+for uses edges (i.e. file A imports module B for using it) -
+edge.inits: dict|None kwargs for init edges (i.e. init.py file imports
+something from downstream of itself) - dot_attrs: dict kwargs for the
+dot graph itself default: {'rankdir': 'TB'} (top to bottom) you can
+change it via dot_attrs.rankdir=LR for left to right, etc.
+
+To modify an element of a dict without specifying the whole dict, you
+can use “.” as a level separator:
+
+    --edge.uses.color=green
+
+  docs for dep_graph_viz v0.1.0
+
+API Documentation
+
+-   NULL_STRINGS
+
+View Source on GitHub
+
+dep_graph_viz.config
+
+View Source on GitHub
+
+-   NULL_STRINGS: set[str] = {'null', 'none'}
+
+  docs for dep_graph_viz v0.1.0
+
+API Documentation
+
+-   NodeType
+-   augment_module_name
+-   add_node
+-   classify_node
+-   Node
+-   build_graph
+-   write_dot
+-   main
+
+View Source on GitHub
+
+dep_graph_viz.dep_graph_viz
+
+View Source on GitHub
+
+-   NodeType = typing.Literal['module_root', 'root', 'module_dir', 'dir', 'module_file', 'script']
+
+def augment_module_name
+
+    (module_name: str, config: dict) -> str
+
+View Source on GitHub
+
+augment module name with prefix if not stripping
+
+def add_node
+
+    (
+        G: networkx.classes.multidigraph.MultiDiGraph,
+        node: dep_graph_viz.dep_graph_viz.Node,
+        config: dict
+    ) -> None
+
+View Source on GitHub
+
+Add a node to the graph with the given type and optional URL.
+
+def classify_node
+
+    (
+        path: str,
+        root: str = '.'
+    ) -> Literal['module_root', 'root', 'module_dir', 'dir', 'module_file', 'script']
+
+View Source on GitHub
+
+class Node:
+
+View Source on GitHub
+
+Node
+
+    (
+        orig_path: str,
+        rel_path: str,
+        aliases: set[str],
+        display_name: str,
+        config: dict,
+        url: str | None = None,
+        node_type: Optional[Literal['module_root', 'root', 'module_dir', 'dir', 'module_file', 'script']] = None,
+        parent_dir: str | None = None
+    )
+
+-   orig_path: str
+
+-   rel_path: str
+
+-   aliases: set[str]
+
+-   display_name: str
+
+-   config: dict
+
+-   url: str | None = None
+
+-   node_type: Optional[Literal['module_root', 'root', 'module_dir', 'dir', 'module_file', 'script']] = None
+
+-   parent_dir: str | None = None
+
+def get_node
+
+    (
+        cls,
+        path: str,
+        config: dict,
+        root: str = '.'
+    ) -> dep_graph_viz.dep_graph_viz.Node
+
+View Source on GitHub
+
+def is_root
+
+    (self) -> bool
+
+View Source on GitHub
+
+def is_module
+
+    (self) -> bool
+
+View Source on GitHub
+
+def get_rank
+
+    (self) -> int
+
+View Source on GitHub
+
+def build_graph
+
+    (root: str, config: dict) -> networkx.classes.multidigraph.MultiDiGraph
+
+View Source on GitHub
+
+def write_dot
+
+    (
+        G: networkx.classes.digraph.DiGraph,
+        output_filename: str,
+        dot_attrs: dict
+    ) -> None
+
+View Source on GitHub
+
+Write graph to a DOT file
+
+def main
+
+    (
+        root: str | None = None,
+        module: str | None = None,
+        output: str = 'output',
+        output_fmt: Literal['svg', 'png'] = 'svg',
+        config_file: str | None = None,
+        print_cfg: bool = False,
+        verbose: bool = False,
+        **kwargs
+    ) -> None
+
+View Source on GitHub
+
+Main function to generate and render a graphviz DOT file representing
+module dependencies
+
+Keyword-only arguments
+
+-   root: str (this arg or module is REQUIRED) root directory to search
+    for Python files
+-   module: str (this arg or root is REQUIRED) name of module to
+    generate graph for – must be importable in the current environment
+-   output: str output filename (without extension) default: "output"
+-   output_fmt: Literal["svg", "png"] output format for running dot
+    default: "svg"
+-   config_file: str | None = None path to a JSON file containing
+    configuration options
+-   print_cfg: bool = False whether to print the configuration after
+    loading it – if this is set, the program will exit after printing
+    the config
+-   verbose: bool = False
+-   h or help print this help message and exit
+
+Configuration options
+
+either specify these in a json file, or separate levels with a dot. set
+to None to disable. - url_prefix: str|None manually add a prefix to the
+url. if set to None, will try to auto-detect from git -
+auto_url_format: str|None how to format a url given the git remote url
+and branch name. default: “{git_remote_url}/tree/{git_branch}/” (which
+works for github) set to None to disable. if both this and url_prefix
+are none, the svg will not have URLs - auto_url_replace: dict[str,str]
+string-replace pairs to apply to the git remote url before formatting it
+note: trailing slashes are also stripped default: {".git": ""} -
+node.dir: dict|None kwargs for directory nodes - node.file: dict|None
+kwargs for file nodes - edge.hierarchy: dict|None kwargs for hierarchy
+edges (i.e. file A is part of module B) - edge.uses: dict|None kwargs
+for uses edges (i.e. file A imports module B for using it) -
+edge.inits: dict|None kwargs for init edges (i.e. init.py file imports
+something from downstream of itself) - dot_attrs: dict kwargs for the
+dot graph itself default: {'rankdir': 'TB'} (top to bottom) you can
+change it via dot_attrs.rankdir=LR for left to right, etc.
+
+To modify an element of a dict without specifying the whole dict, you
+can use “.” as a level separator:
+
+    --edge.uses.color=green
+
+  docs for dep_graph_viz v0.1.0
+
+API Documentation
+
+-   HTML_TEMPLATE
+-   generate_html
+
+View Source on GitHub
+
+dep_graph_viz.html
+
+View Source on GitHub
+
+-   HTML_TEMPLATE: str = '<!DOCTYPE html>\n<html>\n<head>\n    <title>Graphviz SVG</title>\n    <script src="https://d3js.org/d3.v5.min.js"></script>\n    <script src="https://unpkg.com/@hpcc-js/wasm@0.3.13/dist/index.min.js"></script>\n    <script src="https://unpkg.com/d3-graphviz@3.1.0/build/d3-graphviz.min.js"></script>\n    <style>\n        .node:hover,\n        .edge.highlighted {\n            stroke: red;\n            stroke-width: 2px;\n        }\n        .edge.highlighted[marker-end] {\n            marker-end: url(#arrowhead-red);\n        }\n    </style>\n</head>\n<body>\n    <div id="graph" style="width: 100%; height: 100vh;"></div>\n    <script>\n        const dot =
+    DOT_(C)ONTENT
+    ;\n\n        d3.select("#graph").graphviz()\n            .renderDot(dot)\n            .on("end", function() {\n                const graphviz = this;\n\n                d3.selectAll(".node")\n                    .on("mouseover", function(d) {\n                        const nodeId = d3.select(this).attr("id");\n                        console.log("Hovered Node ID:", nodeId);\n\n                        const connectedEdges = graphviz.inEdges(nodeId).concat(graphviz.outEdges(nodeId));\n                        console.log("Connected Edges:", connectedEdges);\n\n                        d3.selectAll(".edge")\n                            .classed("highlighted", function(d) {\n                                return connectedEdges.includes(d3.select(this).node());\n                            });\n                    })\n                    .on("mouseout", function(d) {\n                        d3.selectAll(".edge").classed("highlighted", false);\n                    });\n            });\n    </script>\n</body>\n</html>'
+
+def generate_html
+
+    (dot_file_path: str, output_html_path: str)
+
+View Source on GitHub
+
+  docs for dep_graph_viz v0.1.0
+
+Submodules
+
+-   paths
+-   util
+
+API Documentation
+
+-   normalize_path
+-   path_to_module
+
+View Source on GitHub
+
+dep_graph_viz.util
+
+View Source on GitHub
+
+def normalize_path
+
+    (path: str) -> str
+
+View Source on GitHub
+
+convert any path to a posix path
+
+def path_to_module
+
+    (path: str, strict_names: bool = True) -> str
+
+View Source on GitHub
+
+convert a path to a python file to a module name
+
+  docs for dep_graph_viz v0.1.0
+
+API Documentation
+
+-   MODULE_NAME_REGEX
+-   normalize_path
+-   path_to_module
+-   get_module_directory
+-   get_package_repository_url
+
+View Source on GitHub
+
+dep_graph_viz.util.paths
+
+View Source on GitHub
+
+-   MODULE_NAME_REGEX: re.Pattern = re.compile('^[a-zA-Z_][a-zA-Z0-9_]*$')
+
+def normalize_path
+
+    (path: str) -> str
+
+View Source on GitHub
+
+convert any path to a posix path
+
+def path_to_module
+
+    (path: str, strict_names: bool = True) -> str
+
+View Source on GitHub
+
+convert a path to a python file to a module name
+
+def get_module_directory
+
+    (module_name: str) -> str
+
+View Source on GitHub
+
+Get the directory containing a module’s source code.
+
+Args: module_name: Name of module as you would use in an import
+statement
+
+Returns: Absolute path to the directory containing the module
+
+Raises: ImportError: If module cannot be imported AttributeError: If
+module does not have a file attribute
+
+def get_package_repository_url
+
+    (package_name: str) -> str | None
+
+View Source on GitHub
+
+Get the repository URL for a Python package.
+
+Tries multiple methods: 1. package metadata “project_urls” under
+Repository/Source/Code keys 2. package metadata “home_page” 3. package
+metadata “download_url”
+
+Args: package_name: Name of the installed package
+
+Returns: Repository URL if found, None otherwise
+
+Raises: importlib.metadata.PackageNotFoundError: If package is not
+installed
+
+  docs for dep_graph_viz v0.1.0
+
+API Documentation
+
+-   pprint_ast_aliases
+-   get_imports
+-   get_python_files
+-   get_relevant_directories
+
+View Source on GitHub
+
+dep_graph_viz.util.util
+
+View Source on GitHub
+
+def pprint_ast_aliases
+
+    (aliases: list[ast.alias]) -> str
+
+View Source on GitHub
+
+Pretty print a list of ast.alias objects
+
+def get_imports
+
+    (source_code: str, allow_missing_imports: bool = False) -> list[str]
+
+View Source on GitHub
+
+Get all the imports from a source code string
+
+def get_python_files
+
+    (root: str = '.') -> list[str]
+
+View Source on GitHub
+
+Get all Python files in a directory and its subdirectories
+
+def get_relevant_directories
+
+    (root: str = '.') -> set[str]
+
+View Source on GitHub
+
+from a root, get a set of all directories with python files in them

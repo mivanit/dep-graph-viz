@@ -1,3 +1,10 @@
+# ignore some examples
+
+examples/dep_graph_viz/**
+!examples/dep_graph_viz/00000.*
+!examples/dep_graph_viz/11111.*
+
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]

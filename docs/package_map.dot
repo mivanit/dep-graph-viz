@@ -1,0 +1,27 @@
+digraph {
+rankdir=LR;
+ROOT [rank=10, shape=folder, color=purple, URL="dep_graph_viz/."];
+"util" [rank=11, shape=folder, color=black, URL="dep_graph_viz/util"];
+"config" [rank=11, shape=note, color=black, URL="dep_graph_viz/config.html"];
+"dep_graph_viz" [rank=11, shape=note, color=black, URL="dep_graph_viz/dep_graph_viz.html"];
+"html" [rank=11, shape=note, color=black, URL="dep_graph_viz/html.html"];
+"__main__" [rank=11, shape=note, color=black, URL="dep_graph_viz/__main__.html"];
+"util.paths" [rank=12, shape=note, color=black, URL="dep_graph_viz/util/paths.html"];
+"util.util" [rank=12, shape=note, color=black, URL="dep_graph_viz/util/util.html"];
+ROOT -> "util" [key=0, color=black, penwidth=3, style=solid];
+ROOT -> "config" [key=0, color=black, penwidth=2, style=solid];
+ROOT -> "dep_graph_viz" [key=0, color=black, penwidth=2, style=solid];
+ROOT -> "html" [key=0, color=black, penwidth=2, style=solid];
+ROOT -> "html" [key=1, color=red, penwidth=1, style=solid];
+ROOT -> "__main__" [key=0, color=black, penwidth=2, style=solid];
+ROOT -> "__main__" [key=1, color=red, penwidth=1, style=solid];
+"util" -> "util.paths" [key=0, color=black, penwidth=2, style=solid];
+"util" -> "util.util" [key=0, color=black, penwidth=2, style=solid];
+"config" -> "dep_graph_viz" [key=0, color=red, penwidth=1, style=solid];
+"dep_graph_viz" -> ROOT [key=0, color=blue, penwidth=1, style=dashed];
+"html" -> "dep_graph_viz" [key=0, color=red, penwidth=1, style=solid];
+"util.paths" -> "util" [key=0, color=blue, penwidth=1, style=dashed];
+"util.paths" -> "dep_graph_viz" [key=0, color=red, penwidth=1, style=solid];
+"util.paths" -> "util.util" [key=0, color=red, penwidth=1, style=solid];
+"util.util" -> "dep_graph_viz" [key=0, color=red, penwidth=1, style=solid];
+}

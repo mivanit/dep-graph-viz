@@ -1,0 +1,17 @@
+Name                             Stmts   Miss  Cover   Missing
+--------------------------------------------------------------
+dep_graph_viz\__init__.py            2      0   100%
+dep_graph_viz\__main__.py            4      4     0%   1-6
+dep_graph_viz\config.py             30      0   100%
+dep_graph_viz\dep_graph_viz.py     251     41    84%   66, 82, 85, 90, 102, 111-113, 135, 144-145, 163, 219-236, 279, 327-333, 359, 369, 374-381, 532-533, 537, 546-547, 563, 566, 570-573, 577-578, 581, 636-638
+dep_graph_viz\html.py               11      0   100%
+dep_graph_viz\util\__init__.py       2      0   100%
+dep_graph_viz\util\paths.py         63      6    90%   38, 48, 52, 84, 88, 93
+dep_graph_viz\util\util.py          53      5    91%   29-32, 42, 96
+tests\test_examples.py              29      3    90%   82-84
+tests\util\test_config.py           91      0   100%
+tests\util\test_get_files.py       100     13    87%   272-286, 304-308
+tests\util\test_get_imports.py      11      0   100%
+tests\util\test_paths.py           124      8    94%   123-124, 263-265, 348-349, 379
+--------------------------------------------------------------
+TOTAL                              771     80    90%
