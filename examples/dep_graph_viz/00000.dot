@@ -1,0 +1,18 @@
+digraph {
+rankdir=LR;
+"dep_graph_viz.util" [rank=11, shape=folder, color=black, URL="https://github.com/mivanit/dep-graph-viz/tree/refactor/util"];
+dep_graph_viz [rank=10, shape=folder, color=purple, URL="https://github.com/mivanit/dep-graph-viz/tree/refactor/."];
+"dep_graph_viz.config" [rank=11, shape=note, color=black, URL="https://github.com/mivanit/dep-graph-viz/tree/refactor/config.py"];
+"dep_graph_viz.dep_graph_viz" [rank=11, shape=note, color=black, URL="https://github.com/mivanit/dep-graph-viz/tree/refactor/dep_graph_viz.py"];
+"dep_graph_viz.html" [rank=11, shape=note, color=black, URL="https://github.com/mivanit/dep-graph-viz/tree/refactor/html.py"];
+"dep_graph_viz.__main__" [rank=11, shape=note, color=black, URL="https://github.com/mivanit/dep-graph-viz/tree/refactor/__main__.py"];
+"dep_graph_viz.util.paths" [rank=12, shape=note, color=black, URL="https://github.com/mivanit/dep-graph-viz/tree/refactor/util/paths.py"];
+"dep_graph_viz.util.util" [rank=12, shape=note, color=black, URL="https://github.com/mivanit/dep-graph-viz/tree/refactor/util/util.py"];
+"dep_graph_viz.util" -> "dep_graph_viz.util.paths" [key=0, color=black, penwidth=2, style=solid];
+"dep_graph_viz.util" -> "dep_graph_viz.util.util" [key=0, color=black, penwidth=2, style=solid];
+dep_graph_viz -> "dep_graph_viz.util" [key=0, color=black, penwidth=3, style=solid];
+dep_graph_viz -> "dep_graph_viz.config" [key=0, color=black, penwidth=2, style=solid];
+dep_graph_viz -> "dep_graph_viz.dep_graph_viz" [key=0, color=black, penwidth=2, style=solid];
+dep_graph_viz -> "dep_graph_viz.html" [key=0, color=black, penwidth=2, style=solid];
+dep_graph_viz -> "dep_graph_viz.__main__" [key=0, color=black, penwidth=2, style=solid];
+}
