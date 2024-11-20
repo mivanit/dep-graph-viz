@@ -12,6 +12,8 @@ import pdoc.render  # type: ignore[import-not-found]
 import pdoc.render_helpers  # type: ignore[import-not-found]
 from markupsafe import Markup
 
+from dep_graph_viz import main as dep_graph_viz_main
+
 # ====================================================================================================
 # CONFIGURATION
 PACKAGE_NAME: str
@@ -24,7 +26,14 @@ pdoc.render_helpers.markdown_extensions["alerts"] = True
 pdoc.render_helpers.markdown_extensions["admonitions"] = True
 
 
-def get_package_meta_global(config_path: str | Path = Path("pyproject.toml")):
+HTML_REDIRECT: str = """<!DOCTYPE html>
+<html>
+<head>
+    <meta http-equiv="refresh" content="0; URL={path}">
+</head>
+</html>"""
+
+def get_package_meta_global(config_path: str | Path = Path("pyproject.toml")) -> dict:
     """set global vars from pyproject.toml
 
     sets the global vars:
@@ -43,15 +52,18 @@ def get_package_meta_global(config_path: str | Path = Path("pyproject.toml")):
     PACKAGE_REPO_URL = pyproject_data["project"]["urls"]["Repository"]
     PACKAGE_CODE_URL = f"{PACKAGE_REPO_URL}/blob/{PACKAGE_VERSION}/"
 
+    return pyproject_data
 
-def add_package_meta_pdoc_globals(config_path: str | Path = Path("pyproject.toml")):
+
+def add_package_meta_pdoc_globals(config_path: str | Path = Path("pyproject.toml")) -> dict:
     "adds the package meta to the pdoc globals"
-    get_package_meta_global(config_path)
+    pyproject_data: dict = get_package_meta_global(config_path)
     pdoc.render.env.globals["package_version"] = PACKAGE_VERSION
     pdoc.render.env.globals["package_name"] = PACKAGE_NAME
     pdoc.render.env.globals["package_repo_url"] = PACKAGE_REPO_URL
     pdoc.render.env.globals["package_code_url"] = PACKAGE_CODE_URL
 
+    return pyproject_data
 
 def increment_markdown_headings(markdown_text: str, increment: int = 2) -> str:
     """
@@ -210,7 +222,7 @@ if __name__ == "__main__":
 
     # configure pdoc
     # --------------------------------------------------
-    add_package_meta_pdoc_globals()
+    pyproject_data: dict = add_package_meta_pdoc_globals()
 
     if not parsed_args.warn_all:
         ignore_warnings()
@@ -220,9 +232,9 @@ if __name__ == "__main__":
             PACKAGE_NAME: PACKAGE_CODE_URL,
         },
         template_directory=(
-            Path("docs/templates/html/")
+            OUTPUT_DIR / "templates/html/"
             if not parsed_args.combined
-            else Path("docs/templates/markdown/")
+            else OUTPUT_DIR / "templates/markdown/"
         ),
         show_source=True,
         math=True,
@@ -242,6 +254,40 @@ if __name__ == "__main__":
         pdoc_combined(
             PACKAGE_NAME, output_file=OUTPUT_DIR / "combined" / f"{PACKAGE_NAME}.md"
         )
+    
+    # generate the svg map
+    # --------------------------------------------------
+    dep_graph_viz_main(
+        root=PACKAGE_NAME,
+        output=OUTPUT_DIR / "package_map",
+        output_fmt="html",
+        **{
+            "url_prefix": f"{PACKAGE_NAME}/",
+            "auto_url_replace": {".py": ".html"},
+            **pyproject_data.get("tool", {}).get("dep_graph_viz", {}),
+        }
+    )
+
+    # add an extra index.html file in `docs/PACKAGE_NAME` to redirect to `../current_dir_name.html`
+    # --------------------------------------------------
+    for directory in (
+            list((OUTPUT_DIR / PACKAGE_NAME).rglob('*')) 
+            + [OUTPUT_DIR / PACKAGE_NAME]
+        ):
+        print(directory)
+        if not directory.is_dir() or directory.name.startswith('.'):
+            continue
+            
+        index_path = directory / 'index.html'
+        if index_path.exists():
+            continue
+
+        print(directory, index_path, directory.name)
+            
+        html_content: str = HTML_REDIRECT.format(path=f"../{directory.name}.html")
+        
+        index_path.write_text(html_content, encoding='utf-8')
+
 
     # http server if needed
     # --------------------------------------------------
