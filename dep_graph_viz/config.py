@@ -38,7 +38,7 @@ _DEFAULT_CONFIG: dict = {
 			"color": "purple",
 			"penwidth": "1",
 			"style": "dotted",
-		}
+		},
 	},
 	"node": {
 		"module_root": {

@@ -1,4 +1,3 @@
-from copy import deepcopy
 import json
 import os
 import subprocess
@@ -38,9 +37,11 @@ def add_node(G: nx.MultiDiGraph, node: "Node") -> None:
 	if node not in G:
 		# add the node
 		G.add_node(
-			node, # `Node` object, `str(node)` will be the key
-			rank=node.get_rank(), # for ranking/ordering of the nodes
-			**CONFIG["node"][node.node_type], # attributes (color, shape, etc) for the node type
+			node,  # `Node` object, `str(node)` will be the key
+			rank=node.get_rank(),  # for ranking/ordering of the nodes
+			**CONFIG["node"][
+				node.node_type
+			],  # attributes (color, shape, etc) for the node type
 		)
 		# add a URL -- doesn't work for images
 		if node.url:
@@ -133,7 +134,7 @@ class Node:
 		parent_dir: str = normalize_path(os.path.dirname(rel_path))
 		if not parent_dir:
 			parent_dir = "."
-		
+
 		# unique display name
 		display_name: str = (
 			path_to_module(rel_path) if node_type.startswith("module") else rel_path
@@ -143,7 +144,6 @@ class Node:
 			display_name = "ROOT"
 			parent_dir = None
 			aliases.add(display_name)
-
 
 		# get url if needed
 		url: str | None = None
@@ -214,7 +214,6 @@ def build_graph(
 	include_local_imports: bool = CONFIG["graph"]["include_local_imports"],
 	edge_config: dict[str, Any] = CONFIG["edge"],
 ) -> nx.MultiDiGraph:
-	
 	# create graph, get dirs and package name
 	# --------------------------------------------------
 	G: nx.MultiDiGraph = nx.MultiDiGraph()
@@ -224,12 +223,11 @@ def build_graph(
 	# Add nodes for directories and root
 	# --------------------------------------------------
 	directory_nodes: dict[str, Node] = {
-		directory: Node.get_node(directory)
-		for directory in directories
+		directory: Node.get_node(directory) for directory in directories
 	}
 	for node in directory_nodes.values():
 		add_node(G, node)
-	
+
 	# add folder hierarchy edges
 	# --------------------------------------------------
 	for directory, node in directory_nodes.items():
@@ -290,7 +288,7 @@ def build_graph(
 						node,
 						**edge_config["hierarchy"],
 					)
-	
+
 	# add import edges
 	# --------------------------------------------------
 	if include_local_imports:
@@ -301,8 +299,10 @@ def build_graph(
 			if isinstance(node_key, Node):
 				node = node_key
 			else:
-				raise ValueError(f"unknown node type: {node_key = }, {type(node_key) = }")
-			
+				raise ValueError(
+					f"unknown node type: {node_key = }, {type(node_key) = }"
+				)
+
 			# Read source code
 			node_path: str = node.orig_path
 			if os.path.isdir(node_path):
@@ -320,13 +320,13 @@ def build_graph(
 				# Convert import to module name
 				imported_module_name = imported_module
 
-
 				if CONFIG["graph"]["strip_module_prefix"]:
-					imported_module_name = imported_module_name.removeprefix(package_name).removeprefix(".")
+					imported_module_name = imported_module_name.removeprefix(
+						package_name
+					).removeprefix(".")
 					if not imported_module_name:
 						# if empty string, it means we are looking for the root
 						imported_module_name = "ROOT"
-
 
 				if imported_module_name in nodes_dict:
 					edge_type = (
@@ -335,28 +335,36 @@ def build_graph(
 						else "uses"
 					)
 					if edge_config.get(edge_type):
-						edges_to_add.append(dict(
-							u_for_edge=nodes_dict[imported_module_name],
-							v_for_edge=node,
-							**edge_config[edge_type],
-						))
+						edges_to_add.append(
+							dict(
+								u_for_edge=nodes_dict[imported_module_name],
+								v_for_edge=node,
+								**edge_config[edge_type],
+							)
+						)
 				else:
 					# assume external module
 					if CONFIG["graph"]["include_externals"]:
-						nodes_to_add.append(dict(
-							node_for_adding=imported_module_name,
-							rank=0, # for ranking/ordering of the nodes
-							**CONFIG["node"]["external"], # attributes (color, shape, etc) for the node type
-						))
-						edges_to_add.append(dict(
-							u_for_edge=imported_module_name,
-							v_for_edge=node,
-							**edge_config["external"],
-						))
+						nodes_to_add.append(
+							dict(
+								node_for_adding=imported_module_name,
+								rank=0,  # for ranking/ordering of the nodes
+								**CONFIG["node"][
+									"external"
+								],  # attributes (color, shape, etc) for the node type
+							)
+						)
+						edges_to_add.append(
+							dict(
+								u_for_edge=imported_module_name,
+								v_for_edge=node,
+								**edge_config["external"],
+							)
+						)
 
 		for x in nodes_to_add:
 			G.add_node(**x)
-		
+
 		for x in edges_to_add:
 			G.add_edge(**x)
 
@@ -472,7 +480,9 @@ def main(
 	ROOT = root
 
 	print("# building graph...")
-	G: nx.MultiDiGraph = build_graph(root=".") # pass "." since we just moved to the root directory
+	G: nx.MultiDiGraph = build_graph(
+		root="."
+	)  # pass "." since we just moved to the root directory
 	print(f"\t built graph with {len(G.nodes)} nodes and {len(G.edges)} edges")
 
 	# change back to original directory
