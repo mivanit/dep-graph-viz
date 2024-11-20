@@ -31,6 +31,11 @@ _DEFAULT_CONFIG: dict = {
 			"penwidth": "1",
 			"style": "dashed",
 		},
+		"external": {
+			"color": "purple",
+			"penwidth": "1",
+			"style": "dotted",
+		}
 	},
 	"node": {
 		"module_root": {
@@ -56,6 +61,10 @@ _DEFAULT_CONFIG: dict = {
 		"script": {
 			"shape": "note",
 			"color": "green",
+		},
+		"external": {
+			"shape": "box3d",
+			"color": "purple",
 		},
 	},
 	"dot_attrs": {

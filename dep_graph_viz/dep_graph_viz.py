@@ -33,23 +33,30 @@ NodeType = Literal[
 
 def add_node(G: nx.MultiDiGraph, node: "Node") -> None:
 	"""Add a node to the graph with the given type and optional URL."""
+	# if node is not present, add it
 	if node not in G:
+		# add the node
 		G.add_node(
-			node,
-			rank=node.get_rank(),
-			**CONFIG["node"][node.node_type],
+			node, # `Node` object, `str(node)` will be the key
+			rank=node.get_rank(), # for ranking/ordering of the nodes
+			**CONFIG["node"][node.node_type], # attributes (color, shape, etc) for the node type
 		)
+		# add a URL -- doesn't work for images
 		if node.url:
 			G.nodes[node]["URL"] = f'"{node.url}"'
 	else:
+		# if it's already present, we have a key duplication
 		raise ValueError(f"node {node.path} already exists in the graph!")
 
 
 def classify_node(path: str, root: str = ".") -> NodeType:
 	# posixify path
-	path = path.replace("\\", "/")
+	path = normalize_path(path)
+	# path relative to the root module
 	rel_path: str = os.path.relpath(path, root)
+	# parent directory (module it's directly in)
 	parent_dir: str = os.path.dirname(rel_path)
+	# if it's in the root, set the parent dir to "."
 	if parent_dir == "":
 		parent_dir = "."
 
@@ -108,8 +115,6 @@ class Node:
 		if path == "":
 			path = "."
 
-		print(f"getting node: {path = }")
-
 		# set up aliases
 		aliases: set[str] = {path}
 
@@ -167,7 +172,7 @@ class Node:
 		return self.node_type.startswith("module")
 
 	def get_rank(self) -> int:
-		return self.rel_path.count("/")
+		return self.rel_path.count("/") + 10 if not self.is_root() else 10
 
 	def __hash__(self) -> int:
 		return hash(self.rel_path)
@@ -184,6 +189,7 @@ class Node:
 			return f'"{self.display_name}"'
 
 	def __repr__(self) -> str:
+		return self.__str__()
 		kwargs: str = ", ".join(
 			[
 				(
@@ -210,18 +216,24 @@ def build_graph(
 	only_heirarchy: bool = False,
 	edge_config: dict[str, Any] = CONFIG["edge"],
 ) -> nx.MultiDiGraph:
+	
+	# create graph, get dirs and package name
+	# --------------------------------------------------
 	G: nx.MultiDiGraph = nx.MultiDiGraph()
 	directories: set[str] = get_relevant_directories(root)
+	package_name: str = os.path.basename(os.path.abspath(root))
+	print(f"{package_name = }")
 
 	# Add nodes for directories and root
+	# --------------------------------------------------
 	directory_nodes: dict[str, Node] = {
 		directory: Node.get_node(directory) for directory in directories
 	}
-	print(f"{list(directory_nodes.keys()) = }")
 	for node in directory_nodes.values():
 		add_node(G, node)
 
-	# add folder hierarchy
+	# add folder hierarchy edges
+	# --------------------------------------------------
 	for directory, node in directory_nodes.items():
 		# no parent of the root
 		if node.is_root():
@@ -229,6 +241,8 @@ def build_graph(
 
 		# get parent node
 		parent_node: Node = directory_nodes[node.parent_dir]
+
+		print(f"\tgot parent node: {parent_node = }")
 
 		# figure out edge type and add it
 		edge_type: str
@@ -239,6 +253,10 @@ def build_graph(
 		G.add_edge(parent_node, node, **edge_config[edge_type])
 
 	print(f"{python_files = }")
+
+	# add files nodes and heirarchy edges to folders
+	# --------------------------------------------------
+	nodes_dict: dict[str, Node] = dict()
 	for python_file in python_files:
 		node: Node
 		# special handling for init files
@@ -248,6 +266,8 @@ def build_graph(
 		else:
 			node = Node.get_node(python_file)
 			add_node(G, node)
+
+		nodes_dict[node.display_name] = node
 
 		# add file hierarchy
 		if node.node_type not in {"root", "module_root"} and not is_init:
@@ -265,10 +285,31 @@ def build_graph(
 					G.add_edge(
 						module_parent, node.display_name, **edge_config["hierarchy"]
 					)
-
-		if not only_heirarchy:
+					print(f"\tgot parent node: {module_parent = }")
+	
+	# add import edges
+	# --------------------------------------------------
+	if not only_heirarchy:
+		nodes_to_add: list[dict] = []
+		edges_to_add: list[dict] = []
+		for node_name in G.nodes:
+			node: Node
+			if isinstance(node_name, Node):
+				node = node_name
+			elif isinstance(node_name, str):
+				node = nodes_dict[node_name]
+			else:
+				raise ValueError(f"unknown node type: {node_name = }, {type(node_name) = }")
+			
+			print(f"    processing edges: {node.display_name = }")
 			# Read source code
-			with open(python_file, "r", encoding="utf-8") as f:
+			node_path: str = node.orig_path
+			if os.path.isdir(node_path):
+				node_path = os.path.join(node_path, "__init__.py")
+			elif node_path == ".":
+				node_path = "__init__.py"
+
+			with open(node_path, "r", encoding="utf-8") as f:
 				source_code: str = f.read()
 
 			# Get imports
@@ -276,21 +317,52 @@ def build_graph(
 
 			for imported_module in imported_modules:
 				# Convert import to module name
-				imported_module_name = imported_module.replace("/", ".").replace(
-					"\\", "."
-				)
+				imported_module_name = imported_module
+
+				print(f"\tgot imported module: {imported_module_name = }")
+
+				if CONFIG["strip_module_prefix"]:
+					imported_module_name = imported_module_name.removeprefix(package_name).removeprefix(".")
+					if not imported_module_name:
+						# if empty string, it means we are looking for the root
+						imported_module_name = "ROOT"
+
+
 				if imported_module_name in G:
 					edge_type = (
 						"inits"
-						if classify_node(python_file, root) == "module_dir"
+						if classify_node(node_path, root) == "module_dir"
 						else "uses"
 					)
 					if edge_config.get(edge_type):
-						G.add_edge(
-							node.display_name,
-							imported_module_name,
+						edges_to_add.append(dict(
+							u_for_edge=imported_module_name,
+							v_for_edge=node.display_name,
 							**edge_config[edge_type],
-						)
+						))
+						print(f"\t    got imported NODE:   {imported_module_name = }")
+				else:
+					# assume external module
+					if CONFIG["include_externals"]:
+						nodes_to_add.append(dict(
+							node_for_adding=imported_module_name,
+							rank=0, # for ranking/ordering of the nodes
+							**CONFIG["node"]["external"], # attributes (color, shape, etc) for the node type
+						))
+						edges_to_add.append(dict(
+							u_for_edge=imported_module_name,
+							v_for_edge=node.display_name,
+							**edge_config["external"],
+						))
+
+		for x in nodes_to_add:
+			G.add_node(**x)
+		
+		for x in edges_to_add:
+			G.add_edge(**x)
+
+		print(G.nodes)
+		print(G.edges)
 
 	return G
 
