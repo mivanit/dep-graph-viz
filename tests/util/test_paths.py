@@ -1,8 +1,16 @@
 import sys
 import pytest
+import os
+import sys
+import pytest
+from typing import Callable
+import pytest
+import importlib.metadata
+from unittest.mock import patch, MagicMock
 
-# Import the functions to be tested
-from dep_graph_viz.util.paths import normalize_path, path_to_module
+
+
+from dep_graph_viz.util.paths import normalize_path, path_to_module, get_module_directory, get_package_repository_url
 
 
 @pytest.mark.parametrize(
@@ -184,3 +192,200 @@ def test_path_to_module(path, expected):
 def test_path_to_module_except(path, expected_exception):
 	with pytest.raises(expected_exception):
 		path_to_module(path)
+
+
+
+
+
+# Test data constants
+STDLIB_MODULES = ['json', 'os', 'typing', 'pathlib']
+DEPENDENCY_MODULES = ['networkx', 'pydot', 'pytest', 'fire']
+BUILTIN_MODULES = ['builtins', '_thread', 'sys']
+NESTED_MODULES = ['networkx.drawing', 'muutils.json_serialize']
+
+def test_stdlib_modules() -> None:
+    """Test that we can get directories for standard library modules"""
+    for module_name in STDLIB_MODULES:
+        path = get_module_directory(module_name)
+        assert os.path.isdir(path), f"Path not a directory: {path}"
+        assert os.path.exists(os.path.join(path, f"{module_name}.py")) or \
+               os.path.exists(os.path.join(path, "__init__.py")), \
+               f"No Python source found in {path}"
+
+def test_dependency_modules() -> None:
+    """Test that we can get directories for installed dependencies"""
+    for module_name in DEPENDENCY_MODULES:
+        path = get_module_directory(module_name)
+        assert os.path.isdir(path), f"Path not a directory: {path}"
+        assert os.path.exists(os.path.join(path, "__init__.py")) or \
+               os.path.exists(os.path.join(path, f"{module_name}.py")), \
+               f"No Python source found in {path}"
+
+def test_builtin_modules_raise_properly() -> None:
+    """Test that built-in modules without __file__ raise AttributeError"""
+    for module_name in BUILTIN_MODULES:
+        with pytest.raises(AttributeError) as excinfo:
+            get_module_directory(module_name)
+        assert "has no __file__ attribute" in str(excinfo.value)
+
+def test_nonexistent_module() -> None:
+    """Test that importing a non-existent module raises ImportError"""
+    with pytest.raises(ImportError):
+        get_module_directory('definitely_not_a_real_module_12345')
+
+def test_nested_modules() -> None:
+    """Test that we can get directories for nested modules"""
+    for module_name in NESTED_MODULES:
+        path = get_module_directory(module_name)
+        assert os.path.isdir(path)
+        assert os.path.exists(os.path.join(path, "__init__.py"))
+
+def test_return_type() -> None:
+    """Test that the function returns a string"""
+    path = get_module_directory('json')
+    assert isinstance(path, str)
+
+def test_absolute_path() -> None:
+    """Test that returned paths are absolute"""
+    path = get_module_directory('json')
+    assert os.path.isabs(path)
+
+@pytest.mark.skipif(sys.platform != 'win32', reason="Windows-specific path test")
+def test_windows_path_format() -> None:
+    """Test Windows path formatting"""
+    path = get_module_directory('json')
+    assert ':' in path  # Windows paths have drive letter with colon
+    assert '\\' in path  # Windows uses backslashes
+
+@pytest.mark.skipif(sys.platform == 'win32', reason="Unix-specific path test")
+def test_unix_path_format() -> None:
+    """Test Unix path formatting"""
+    path = get_module_directory('json')
+    assert path.startswith('/')  # Unix absolute paths start with /
+    assert '\\' not in path  # Unix doesn't use backslashes
+
+def test_module_attributes() -> None:
+    """Test that the function works with modules that have various attributes"""
+    # Module with __path__ (package), without __path__ (single file), and with both
+    TEST_MODULES = ['networkx', 'json', 'pytest']
+    for module_name in TEST_MODULES:
+        path = get_module_directory(module_name)
+        assert os.path.isdir(path)
+
+TEST_MODULES_AND_SUFFIXES = [
+    ('json', 'json'),
+    ('networkx', 'networkx'),
+    ('pytest', 'pytest'),
+]
+
+@pytest.mark.parametrize("module_name,expected_suffix", TEST_MODULES_AND_SUFFIXES)
+def test_directory_names(module_name: str, expected_suffix: str) -> None:
+    """Test that directory names match expected patterns"""
+    path = get_module_directory(module_name)
+    assert os.path.basename(path) == expected_suffix or \
+           os.path.basename(path) == 'site-packages'  # handle installed packages
+
+def test_directory_permissions() -> None:
+    """Test that we have read access to returned directories"""
+    path = get_module_directory('json')
+    assert os.access(path, os.R_OK), f"No read access to {path}"
+
+def test_same_module_multiple_calls() -> None:
+    """Test that multiple calls for the same module return the same path"""
+    path1 = get_module_directory('json')
+    path2 = get_module_directory('json')
+    assert path1 == path2
+
+INVALID_MODULE_NAMES = [
+    "",  # empty string
+    "   ",  # whitespace
+    "\n",  # newline
+    "module.name.",  # trailing dot
+    "module..name",  # double dot
+    "123invalid",  # starts with number
+    "invalid!name",  # invalid characters
+]
+
+@pytest.mark.parametrize("invalid_input", INVALID_MODULE_NAMES)
+def test_invalid_module_names(invalid_input: str) -> None:
+    """Test that invalid module names raise appropriate errors"""
+    with pytest.raises((ImportError, ValueError, SyntaxError)):
+        get_module_directory(invalid_input)
+        
+
+
+
+KNOWN_PACKAGES = [
+    "requests",
+    "pytest",
+    "networkx",
+]
+
+MOCK_METADATA = {
+    "package1": {
+        "project_urls": '{"Repository": "https://example.com/repo1"}',
+    },
+    "package2": {
+        "home-page": "https://example.com/repo2",
+    },
+    "package3": {
+        "download-url": "https://example.com/repo3",
+    },
+    "package4": {
+        "project_urls": '{"Source Code": "https://example.com/repo4"}',
+    },
+    "package5": {  # No repo info at all
+        "author": "Test Author",
+        "version": "1.0.0"
+    },
+}
+
+def test_known_packages():
+    """Test getting repository URLs for known packages"""
+    for package_name in KNOWN_PACKAGES:
+        try:
+            url = get_package_repository_url(package_name)
+            assert url is not None
+            assert url.startswith("http")  # Basic URL validation
+        except importlib.metadata.PackageNotFoundError:
+            pytest.skip(f"Package {package_name} not installed")
+
+def test_nonexistent_package():
+    """Test behavior with non-existent package"""
+    with pytest.raises(importlib.metadata.PackageNotFoundError):
+        get_package_repository_url("definitely_not_a_real_package_12345")
+
+@pytest.mark.parametrize("package_name,metadata,expected", [
+    ("package1", MOCK_METADATA["package1"], "https://example.com/repo1"),
+    ("package2", MOCK_METADATA["package2"], "https://example.com/repo2"),
+    ("package3", MOCK_METADATA["package3"], "https://example.com/repo3"),
+    ("package4", MOCK_METADATA["package4"], "https://example.com/repo4"),
+    ("package5", MOCK_METADATA["package5"], None),
+])
+def test_different_metadata_formats(package_name: str, metadata: dict, expected: str|None):
+    """Test handling of different metadata formats"""
+    mock_metadata = MagicMock()
+    mock_metadata.__getitem__.side_effect = metadata.__getitem__
+    mock_metadata.__contains__.side_effect = metadata.__contains__
+
+    with patch('importlib.metadata.metadata', return_value=mock_metadata):
+        url = get_package_repository_url(package_name)
+        assert url == expected
+
+def test_return_type():
+    """Test return type is either str or None"""
+    try:
+        url = get_package_repository_url(KNOWN_PACKAGES[0])
+        assert isinstance(url, str) or url is None
+    except importlib.metadata.PackageNotFoundError:
+        pytest.skip(f"Package {KNOWN_PACKAGES[0]} not installed")
+
+def test_invalid_project_urls():
+    """Test handling of invalid project_urls JSON"""
+    mock_metadata = MagicMock()
+    mock_metadata.__contains__.return_value = True
+    mock_metadata.__getitem__.return_value = "not valid json"
+
+    with patch('importlib.metadata.metadata', return_value=mock_metadata):
+        url = get_package_repository_url("test-package")
+        assert url is None

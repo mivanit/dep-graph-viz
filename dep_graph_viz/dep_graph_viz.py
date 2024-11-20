@@ -3,6 +3,7 @@ import os
 import subprocess
 from dataclasses import dataclass
 from typing import Any, Literal
+import warnings
 
 import networkx as nx
 import pydot
@@ -10,7 +11,7 @@ from muutils.dictmagic import kwargs_to_nested_dict, update_with_nested_dict
 from networkx.drawing.nx_pydot import to_pydot
 
 from dep_graph_viz.config import CONFIG, _process_config
-from dep_graph_viz.util.paths import normalize_path, path_to_module
+from dep_graph_viz.util.paths import get_module_directory, get_package_repository_url, normalize_path, path_to_module
 from dep_graph_viz.util.util import (
 	get_imports,
 	get_python_files,
@@ -148,7 +149,7 @@ class Node:
 		# unique display name
 		display_name: str
 		if node_type.startswith("module"):
-			display_name = path_to_module(rel_path)
+			display_name = path_to_module(rel_path, strict_names=CONFIG["graph"]["strict_names"])
 			# special case for when there is a file/module with the same name as the package
 			if node_type != "module_root":
 				display_name = augment_module_name(display_name)
@@ -300,8 +301,22 @@ def build_graph(
 					module_parent: str = sorted(parents, key=len)[-1]
 					if module_parent == ROOT_NODE_NAME:
 						module_parent = "."
+
+					parent_node: Node
+					try:
+						parent_node = directory_nodes[module_parent]
+					except KeyError as e:
+						if CONFIG["graph"]["except_if_missing_edges"]:
+							raise KeyError(
+								f"missing parent node for {node.orig_path = }: '{module_parent}'. if you think this is a mistake, set `graph.except_if_missing_edges` to `False` in the config"
+							) from e
+						else:
+							warnings.warn(
+								f"missing parent node for {node.orig_path = }: '{module_parent}'"
+							)
+
 					G.add_edge(
-						directory_nodes[module_parent],
+						parent_node,
 						node,
 						**edge_config["hierarchy"],
 					)
@@ -309,9 +324,14 @@ def build_graph(
 	# add import edges
 	# --------------------------------------------------
 	if include_local_imports:
+		# init empty lists, cant modify while iterating
+		# -------------------------
 		nodes_to_add: list[dict] = []
 		edges_to_add: list[dict] = []
 		for node_key in G.nodes:
+
+			# get and check the node
+			# -------------------------
 			node: Node
 			if isinstance(node_key, Node):
 				node = node_key
@@ -321,22 +341,38 @@ def build_graph(
 				)
 
 			# Read source code
+			# # -------------------------
 			node_path: str = node.orig_path
 			if os.path.isdir(node_path):
 				node_path = os.path.join(node_path, "__init__.py")
 			elif node_path == ".":
 				node_path = "__init__.py"
 
-			with open(node_path, "r", encoding="utf-8") as f:
-				source_code: str = f.read()
+			try:
+				with open(node_path, "r", encoding="utf-8") as f:
+					source_code: str = f.read()
+			except FileNotFoundError as e:
+				if CONFIG["graph"]["except_if_missing_edges"]:
+					raise FileNotFoundError(
+						f"could not read source code for {node_path = }. if you think this is a mistake, set `graph.except_if_missing_edges` to `False` in the config"
+					) from e
+				else:
+					warnings.warn(f"could not read source code for {node_path = }, skipping")
+					continue
 
-			# Get imports
-			imported_modules: list[str] = get_imports(source_code)
+			# Get imports, dedupe, and loop over them
+			# -------------------------
+			imported_modules: list[str] = list(set(
+				get_imports(source_code, allow_missing_imports=not CONFIG["graph"]["except_if_missing_edges"])
+			))
 
 			for imported_module in imported_modules:
 				# Convert import to module name
 				imported_module_name = imported_module
 
+
+
+				# if stripping module prefix, remove it
 				if CONFIG["graph"]["strip_module_prefix"]:
 					imported_module_name = imported_module_name.removeprefix(
 						package_name
@@ -346,6 +382,9 @@ def build_graph(
 						imported_module_name = ROOT_NODE_NAME
 
 				if imported_module_name in nodes_dict:
+		
+					# adding edge to local import
+					# -------------------------
 					edge_type = (
 						"inits"
 						if node_path.endswith("__init__.py")
@@ -361,6 +400,7 @@ def build_graph(
 						)
 				else:
 					# assume external module
+					# -------------------------
 					if CONFIG["graph"]["include_externals"]:
 						nodes_to_add.append(
 							dict(
@@ -379,6 +419,10 @@ def build_graph(
 							)
 						)
 
+		# add the nodes and edges we were missing
+		# -------------------------
+
+		# these nodes should only be present if we are including external imports of other packages
 		for x in nodes_to_add:
 			G.add_node(**x)
 
@@ -397,6 +441,7 @@ def write_dot(G: nx.DiGraph, output_filename: str) -> None:
 
 def main(
 	root: str | None = None,
+	module: str | None = None,
 	output: str = "output",
 	output_fmt: Literal["svg", "png"] = "svg",
 	config_file: str | None = None,
@@ -406,17 +451,17 @@ def main(
 ) -> None:
 	"""Main function to generate and render a graphviz DOT file representing module dependencies
 
-	# Positional or keyword arguments
-	- `root: str` (REQUIRED)
+	# Keyword-only arguments
+	- `root: str` (this arg or `module` is REQUIRED)
 	    root directory to search for Python files
+	- `module: str` (this arg or `root` is REQUIRED)
+		name of module to generate graph for -- must be importable in the current environment
 	- `output: str`
 	    output filename (without extension)
 	    default: `"output"`
 	- `output_fmt: Literal["svg", "png"]`
 	    output format for running `dot`
 	    default: `"svg"`
-
-	# Keyword-only arguments
 	- `config_file: str | None = None`
 	    path to a JSON file containing configuration options
 	- `print_cfg: bool = False`
@@ -462,6 +507,16 @@ def main(
 	# handle kwargs and config
 	# --------------------------------------------------
 
+	# handle module vs explicit path
+	if root is None:
+		assert module is not None, "either root or module must be given"
+		root = get_module_directory(module)
+	elif module is not None:
+		pass
+	else:
+		raise ValueError("either root or module must be given, got `None` for both")
+	
+
 	# update config from file if given
 	if config_file is not None:
 		with open(config_file, "r", encoding="utf-8") as f:
@@ -477,7 +532,13 @@ def main(
 		)
 
 	# process by converting none types, auto-detecting url_prefix from git if needed
+	# special config processing: if we are doing a module, then we try to get the url prefix from there
+	url_prefix: str | None = CONFIG["url_prefix"]
+	if module is not None and url_prefix is None:
+		url_prefix = get_package_repository_url(module)
 	_process_config(root=root)
+	if url_prefix is not None:
+		CONFIG["url_prefix"] = url_prefix
 
 	# print help message and exit
 	if "h" in CONFIG or "help" in CONFIG:

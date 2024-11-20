@@ -10,8 +10,10 @@ _DEFAULT_CONFIG: dict = {
 	"auto_url_replace": {".git": ""},
 	"graph": {
 		"include_local_imports": True,
-		"strip_module_prefix": False,
+		"strip_module_prefix": True,
 		"include_externals": False,
+		"except_if_missing_edges": False,
+		"strict_names": False,
 	},
 	"edge": {
 		"module_hierarchy": {

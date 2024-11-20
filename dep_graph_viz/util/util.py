@@ -2,12 +2,22 @@ import ast
 import glob
 import os
 from pathlib import Path
+import warnings
 
 
 from dep_graph_viz.util.paths import normalize_path
 
 
-def get_imports(source_code: str) -> list[str]:
+def pprint_ast_aliases(aliases: list[ast.alias]) -> str:
+	"Pretty print a list of ast.alias objects"
+	x: str = ", ".join([
+		f"{alias.name} as {alias.asname} : {alias.lineno} - {alias.end_lineno} : {alias.col_offset} - {alias.end_col_offset}" 
+		for alias in aliases
+	])
+
+	return f"[{x}]"
+
+def get_imports(source_code: str, allow_missing_imports: bool = False) -> list[str]:
 	"Get all the imports from a source code string"
 	tree: ast.Module = ast.parse(source_code)
 	imports: list[str] = []
@@ -16,18 +26,31 @@ def get_imports(source_code: str) -> list[str]:
 		if isinstance(node, ast.Import):
 			for alias in node.names:
 				if alias.name is None:
-					raise ValueError(
-						f"node.names[alias].name is None: {node = } {alias = }"
-					)
-				imports.append(alias.name)
+					if allow_missing_imports:
+						warnings.warn(f"node.names[alias].name is None: {node = } {alias = }, skipping it")
+					else:
+						raise ValueError(
+							f"node.names[alias].name is None: {node = } {alias = }",
+							"if you want to allow missing imports, set `graph.except_if_missing_edges` to `False`",
+						)
+				else:
+					imports.append(alias.name)
 		# Check if node is a from ... import ... statement
 		elif isinstance(node, ast.ImportFrom):
 			if node.module is None:
-				raise ValueError(f"module name is None: {node = }")
-			imports.append(node.module)
+				if allow_missing_imports:
+					warnings.warn(f"module name is None, skipping it: {node = }, {node.module = }, {pprint_ast_aliases(node.names) = }, {node.level = }")
+				else:
+					raise ValueError(
+						f"module name is None: {node = }, {node.module = }, {pprint_ast_aliases(node.names) = }, {node.level = }",
+						"if you want to allow missing imports, set `graph.except_if_missing_edges` to `False`",
+					)
+			else:
+				imports.append(node.module)
 
 	return imports
 
+ast.alias
 
 def get_python_files(root: str = ".") -> list[str]:
 	"Get all Python files in a directory and its subdirectories"
