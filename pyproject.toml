@@ -32,6 +32,8 @@ dev = [
 	'pdoc>=14.6.0',
 	# tomli since no tomlib in python < 3.11
 	"tomli>=2.1.0; python_version < '3.11'",
+	# for testing the graph building
+	"numpy>=1.21.0",
 ]
 lint = [
 	# lint
