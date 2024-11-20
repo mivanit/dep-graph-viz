@@ -1,3 +1,4 @@
+from copy import deepcopy
 import json
 import os
 import subprocess
@@ -10,7 +11,7 @@ import pydot
 from muutils.dictmagic import kwargs_to_nested_dict, update_with_nested_dict
 from networkx.drawing.nx_pydot import to_pydot
 
-from dep_graph_viz.config import _process_config
+from dep_graph_viz.config import _DEFAULT_CONFIG, _process_config
 from dep_graph_viz.util.paths import get_module_directory, get_package_repository_url, normalize_path, path_to_module
 from dep_graph_viz.util.util import (
 	get_imports,
@@ -18,12 +19,12 @@ from dep_graph_viz.util.util import (
 	get_relevant_directories,
 )
 
-ORIG_DIR: str = os.getcwd()
-# *absolute* path of the root directory
-ROOT: str | None = None
+# ORIG_DIR: str = os.getcwd()
+# # *absolute* path of the root directory
+# ROOT: str | None = None
 
-PACKAGE_NAME: str
-ROOT_NODE_NAME: str = "ROOT"
+# PACKAGE_NAME: str
+# ROOT_NODE_NAME: str = "ROOT"
 
 NodeType = Literal[
 	"module_root",  # root if __init__.py is present
@@ -34,15 +35,18 @@ NodeType = Literal[
 	"script",  # standalone file (in a directory without __init__.py)
 ]
 
-def augment_module_name(module_name: str) -> str:
+def augment_module_name(module_name: str, config: dict) -> str:
 	"augment module name with prefix if not stripping"
-	if CONFIG["graph"]["strip_module_prefix"] or module_name in (".", "ROOT"):
+	if (
+		config["graph"]["strip_module_prefix"] 
+		or module_name in (".", "ROOT")
+	):
 		return module_name
 	else:
 		return f"{PACKAGE_NAME}.{module_name}"
 
 
-def add_node(G: nx.MultiDiGraph, node: "Node") -> None:
+def add_node(G: nx.MultiDiGraph, node: "Node", config: dict) -> None:
 	"""Add a node to the graph with the given type and optional URL."""
 	# if node is not present, add it
 	if node not in G:
@@ -50,7 +54,7 @@ def add_node(G: nx.MultiDiGraph, node: "Node") -> None:
 		G.add_node(
 			node,  # `Node` object, `str(node)` will be the key
 			rank=node.get_rank(),  # for ranking/ordering of the nodes
-			**CONFIG["node"][
+			**config["node"][
 				node.node_type
 			],  # attributes (color, shape, etc) for the node type
 		)
@@ -115,6 +119,7 @@ class Node:
 	rel_path: str
 	aliases: set[str]
 	display_name: str
+	config: dict
 	url: str | None = None
 	node_type: NodeType | None = None
 	parent_dir: str | None = None
@@ -123,6 +128,7 @@ class Node:
 	def get_node(
 		cls,
 		path: str,
+		config: dict,
 		root: str = ".",
 	) -> "Node":
 		if path == "":
@@ -149,26 +155,26 @@ class Node:
 		# unique display name
 		display_name: str
 		if node_type.startswith("module"):
-			display_name = path_to_module(rel_path, strict_names=CONFIG["graph"]["strict_names"])
+			display_name = path_to_module(rel_path, strict_names=config["graph"]["strict_names"])
 			# special case for when there is a file/module with the same name as the package
 			if node_type != "module_root":
-				display_name = augment_module_name(display_name)
+				display_name = augment_module_name(display_name, config)
 		else:
 			display_name = rel_path
 
 		aliases.add(display_name)
 		if node_type in {"module_root", "root"}:
-			display_name = ROOT_NODE_NAME
+			display_name = config["root_node_name"]
 			parent_dir = None
 			aliases.add(display_name)
 
 		# get url if needed
 		url: str | None = None
-		url_prefix: str = CONFIG["url_prefix"]
+		url_prefix: str = config["url_prefix"]
 		if url_prefix is not None:
 			url = f"{url_prefix}{rel_path}"
-			if CONFIG.get("auto_url_replace", None):
-				for k, v in CONFIG["auto_url_replace"].items():
+			if config.get("auto_url_replace", None):
+				for k, v in config["auto_url_replace"].items():
 					url = url.replace(k, v)
 
 		# assemble and return node
@@ -177,6 +183,7 @@ class Node:
 			rel_path=rel_path,
 			aliases=aliases,
 			display_name=display_name,
+			config=config,
 			url=url,
 			node_type=node_type,
 			parent_dir=parent_dir,
@@ -200,9 +207,9 @@ class Node:
 		if self.is_root():
 			# absolute path of the root directory
 			return (
-				f'"{CONFIG["git_remote_url"]}"'
-				if CONFIG.get("git_remote_url")
-				else ROOT_NODE_NAME
+				f'"{self.config["git_remote_url"]}"'
+				if self.config.get("git_remote_url")
+				else self.config["root_node_name"]
 			)
 		else:
 			return f'"{self.display_name}"'
@@ -235,8 +242,8 @@ def build_graph(
 ) -> nx.MultiDiGraph:
 	# process config
 	# --------------------------------------------------
-	include_local_imports: bool = config["graph"]["include_local_imports"],
-	edge_config: dict[str, Any] = config["edge"],
+	include_local_imports: bool = config["graph"]["include_local_imports"]
+	edge_config: dict[str, Any] = config["edge"]
 
 	# create graph, get dirs and package name
 	# --------------------------------------------------
@@ -248,10 +255,11 @@ def build_graph(
 	# Add nodes for directories and root
 	# --------------------------------------------------
 	directory_nodes: dict[str, Node] = {
-		augment_module_name(directory): Node.get_node(directory) for directory in directories
+		augment_module_name(directory, config) : Node.get_node(directory, config=config)
+		for directory in directories
 	}
 	for node in directory_nodes.values():
-		add_node(G, node)
+		add_node(G, node, config=config)
 
 	# add folder hierarchy edges
 	# --------------------------------------------------
@@ -285,10 +293,14 @@ def build_graph(
 		# special handling for init files
 		is_init: bool = python_file.endswith("__init__.py") or python_file == "."
 		if is_init:
-			node = directory_nodes[augment_module_name(os.path.dirname(python_file) or ".")]
+			augmented_module_name: str = augment_module_name(
+				os.path.dirname(python_file) or ".",
+				config,
+			)
+			node = directory_nodes[augmented_module_name]
 		else:
-			node = Node.get_node(python_file)
-			add_node(G, node)
+			node = Node.get_node(python_file, config=config)
+			add_node(G, node, config=config)
 
 		# this will add the directory node if it doesn't exist
 		nodes_dict[node.display_name] = node
@@ -306,14 +318,14 @@ def build_graph(
 						len(parents) == 1
 					), f"multiple parents found for {node.orig_path = }: {parents}"
 					module_parent: str = sorted(parents, key=len)[-1]
-					if module_parent == ROOT_NODE_NAME:
+					if module_parent == config["root_node_name"]:
 						module_parent = "."
 
 					parent_node: Node
 					try:
 						parent_node = directory_nodes[module_parent]
 					except KeyError as e:
-						if CONFIG["graph"]["except_if_missing_edges"]:
+						if config["graph"]["except_if_missing_edges"]:
 							raise KeyError(
 								f"missing parent node for {node.orig_path = }: '{module_parent}'. if you think this is a mistake, set `graph.except_if_missing_edges` to `False` in the config"
 							) from e
@@ -359,7 +371,7 @@ def build_graph(
 				with open(node_path, "r", encoding="utf-8") as f:
 					source_code: str = f.read()
 			except FileNotFoundError as e:
-				if CONFIG["graph"]["except_if_missing_edges"]:
+				if config["graph"]["except_if_missing_edges"]:
 					raise FileNotFoundError(
 						f"could not read source code for {node_path = }. if you think this is a mistake, set `graph.except_if_missing_edges` to `False` in the config"
 					) from e
@@ -370,7 +382,7 @@ def build_graph(
 			# Get imports, dedupe, and loop over them
 			# -------------------------
 			imported_modules: list[str] = list(set(
-				get_imports(source_code, allow_missing_imports=not CONFIG["graph"]["except_if_missing_edges"])
+				get_imports(source_code, allow_missing_imports=not config["graph"]["except_if_missing_edges"])
 			))
 
 			for imported_module in imported_modules:
@@ -380,13 +392,13 @@ def build_graph(
 
 
 				# if stripping module prefix, remove it
-				if CONFIG["graph"]["strip_module_prefix"]:
+				if config["graph"]["strip_module_prefix"]:
 					imported_module_name = imported_module_name.removeprefix(
 						package_name
 					).removeprefix(".")
 					if not imported_module_name:
 						# if empty string, it means we are looking for the root
-						imported_module_name = ROOT_NODE_NAME
+						imported_module_name = config["root_node_name"]
 
 				if imported_module_name in nodes_dict:
 		
@@ -408,12 +420,12 @@ def build_graph(
 				else:
 					# assume external module
 					# -------------------------
-					if CONFIG["graph"]["include_externals"]:
+					if config["graph"]["include_externals"]:
 						nodes_to_add.append(
 							dict(
 								node_for_adding=imported_module_name,
 								rank=0,  # for ranking/ordering of the nodes
-								**CONFIG["node"][
+								**config["node"][
 									"external"
 								],  # attributes (color, shape, etc) for the node type
 							)
@@ -439,10 +451,10 @@ def build_graph(
 	return G
 
 
-def write_dot(G: nx.DiGraph, output_filename: str) -> None:
+def write_dot(G: nx.DiGraph, output_filename: str, dot_attrs: dict) -> None:
 	"""Write graph to a DOT file"""
 	P: pydot.Dot = to_pydot(G)
-	P.obj_dict["attributes"].update(CONFIG["dot_attrs"])
+	P.obj_dict["attributes"].update(dot_attrs)
 	P.write_raw(output_filename)
 
 
@@ -525,6 +537,8 @@ def main(
 	
 
 	# update config from file if given
+
+	CONFIG: dict = deepcopy(_DEFAULT_CONFIG)
 	if config_file is not None:
 		with open(config_file, "r", encoding="utf-8") as f:
 			update_with_nested_dict(CONFIG, json.load(f))
@@ -543,7 +557,7 @@ def main(
 	url_prefix: str | None = None
 	if module is not None and CONFIG["url_prefix"] is None:
 		url_prefix = get_package_repository_url(module)
-	_process_config(root=root)
+	_process_config(CONFIG, root=root)
 	if url_prefix is not None:
 		CONFIG["url_prefix"] = url_prefix
 
@@ -576,19 +590,19 @@ def main(
 	# --------------------------------------------------
 
 	# change directory
+	orig_dir: str = os.getcwd()
 	os.chdir(root)
-	global ROOT
-	ROOT = root
 
 	print("# building graph...")
 	G: nx.MultiDiGraph = build_graph(
+		# pass "." since we just moved to the root directory
 		root=".",
 		config = CONFIG,
-	)  # pass "." since we just moved to the root directory
+	)
 	print(f"\t built graph with {len(G.nodes)} nodes and {len(G.edges)} edges")
 
 	# change back to original directory
-	os.chdir(ORIG_DIR)
+	os.chdir(orig_dir)
 
 
 	# output
@@ -597,7 +611,7 @@ def main(
 	# write the dot file first
 	output_file_dot: str = f"{output}.dot"
 	print(f"# writing dot file: {output_file_dot}")
-	write_dot(G, f"{output_file_dot}")
+	write_dot(G, f"{output_file_dot}", dot_attrs=CONFIG["dot_attrs"])
 
 	if output_fmt == "html":
 		# if HTML, generate it and put the dotfile contents inline

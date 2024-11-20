@@ -5,9 +5,11 @@ from typing import Any
 
 
 _DEFAULT_CONFIG: dict = {
+	# url stuff
 	"url_prefix": None,
 	"auto_url_format": "{git_remote_url}/tree/{git_branch}/",
 	"auto_url_replace": {".git": ""},
+	# graph configuration
 	"graph": {
 		"include_local_imports": True,
 		"strip_module_prefix": True,
@@ -15,6 +17,14 @@ _DEFAULT_CONFIG: dict = {
 		"except_if_missing_edges": False,
 		"strict_names": False,
 	},
+	# root node default name (only applies if `graph.strip_module_prefix` is True)
+	"root_node_name": "ROOT",
+	# passed to dot
+	"dot_attrs": {
+		# 'rankdir': 'TB',
+		"rankdir": "LR",
+	},
+	# edge and node configurations
 	"edge": {
 		"module_hierarchy": {
 			"color": "black",
@@ -71,10 +81,6 @@ _DEFAULT_CONFIG: dict = {
 			"shape": "box3d",
 			"color": "purple",
 		},
-	},
-	"dot_attrs": {
-		# 'rankdir': 'TB',
-		"rankdir": "LR",
 	},
 }
 
