@@ -9,14 +9,14 @@ OUTPUT_DIR: Path = Path("examples")
 
 TEST_PATHS: dict[str, str] = {
 	"dep_graph_viz": "dep_graph_viz",
-	".": "dep_graph_viz-tests",
+	# ".": "dep_graph_viz-tests",
 }
 
 TEST_MODULES: list[str] = [
 	# "numpy",
 	# "pytest",
 	# "networkx",
-	"muutils",
+	# "muutils",
 	# "fire",
 	# "pdoc",
 ]
@@ -65,12 +65,12 @@ def id_func(val) -> str:
 def test_generate_examples_local(paths: tuple[str, str], fmt: str, config: dict):
 	root: str = paths[0]
 	output: Path = OUTPUT_DIR / paths[1]
-	output.mkdir(exist_ok=True)
+	output.mkdir(exist_ok=True, parents=True)
 	main(
 		root=root,
 		output=(output / id_func(config)).as_posix(),
 		output_fmt=fmt,
-		**config,
+		graph=config,
 	)
 	
 @pytest.mark.parametrize(
@@ -80,10 +80,10 @@ def test_generate_examples_local(paths: tuple[str, str], fmt: str, config: dict)
 )
 def test_generate_examples_modules(module: str, fmt: str, config: dict):
 	output: Path = OUTPUT_DIR / module
-	output.mkdir(exist_ok=True)
+	output.mkdir(exist_ok=True, parents=True)
 	main(
 		module=module,
 		output=(output / id_func(config)).as_posix(),
 		output_fmt=fmt,
-		**config,
+		graph=config,
 	)

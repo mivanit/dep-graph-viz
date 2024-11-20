@@ -43,7 +43,7 @@ def augment_module_name(module_name: str, config: dict) -> str:
 	):
 		return module_name
 	else:
-		return f"{PACKAGE_NAME}.{module_name}"
+		return f"{config['PACKAGE_NAME']}.{module_name}"
 
 
 def add_node(G: nx.MultiDiGraph, node: "Node", config: dict) -> None:
@@ -250,7 +250,7 @@ def build_graph(
 	G: nx.MultiDiGraph = nx.MultiDiGraph()
 	directories: set[str] = get_relevant_directories(root)
 	package_name: str = os.path.basename(os.path.abspath(root))
-	assert package_name == PACKAGE_NAME
+	assert package_name == config["PACKAGE_NAME"], f"{package_name = }, {config['PACKAGE_NAME'] = }"
 
 	# Add nodes for directories and root
 	# --------------------------------------------------
@@ -343,6 +343,7 @@ def build_graph(
 	# add import edges
 	# --------------------------------------------------
 	if include_local_imports:
+		print("!!!!!!!!!! INCLUDING LOCAL IMPORTS")
 		# init empty lists, cant modify while iterating
 		# -------------------------
 		nodes_to_add: list[dict] = []
@@ -539,6 +540,8 @@ def main(
 	# update config from file if given
 
 	CONFIG: dict = deepcopy(_DEFAULT_CONFIG)
+	print(kwargs)
+	print(CONFIG["graph"])
 	if config_file is not None:
 		with open(config_file, "r", encoding="utf-8") as f:
 			update_with_nested_dict(CONFIG, json.load(f))
@@ -551,6 +554,7 @@ def main(
 				kwargs, transform_key=lambda x: x.lstrip("-"), sep="."
 			),
 		)
+	print(CONFIG["graph"])
 
 	# process by converting none types, auto-detecting url_prefix from git if needed
 	# special config processing: if we are doing a module, then we try to get the url prefix from there
@@ -579,12 +583,10 @@ def main(
 	# set up some other globals
 	# --------------------------------------------------
 
-	# get global package name, set root node name if needed
-	global PACKAGE_NAME
-	global ROOT_NODE_NAME
-	PACKAGE_NAME = os.path.basename(os.path.abspath(root))
+	# get global package name, set root node name if neededME
+	CONFIG["PACKAGE_NAME"] = os.path.basename(os.path.abspath(root))
 	if not CONFIG["graph"]["strip_module_prefix"]:
-		ROOT_NODE_NAME = PACKAGE_NAME
+		CONFIG["root_node_name"] = CONFIG["PACKAGE_NAME"]
 	
 	# move directory, build graph, move back
 	# --------------------------------------------------
