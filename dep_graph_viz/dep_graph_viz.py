@@ -211,9 +211,8 @@ class Node:
 
 
 def build_graph(
-	python_files: list[str],
 	root: str = ".",
-	only_heirarchy: bool = False,
+	include_local_imports: bool = CONFIG["graph"]["include_local_imports"],
 	edge_config: dict[str, Any] = CONFIG["edge"],
 ) -> nx.MultiDiGraph:
 	
@@ -222,12 +221,12 @@ def build_graph(
 	G: nx.MultiDiGraph = nx.MultiDiGraph()
 	directories: set[str] = get_relevant_directories(root)
 	package_name: str = os.path.basename(os.path.abspath(root))
-	print(f"{package_name = }")
 
 	# Add nodes for directories and root
 	# --------------------------------------------------
 	directory_nodes: dict[str, Node] = {
-		directory: Node.get_node(directory) for directory in directories
+		directory: Node.get_node(directory)
+		for directory in directories
 	}
 	for node in directory_nodes.values():
 		add_node(G, node)
@@ -242,16 +241,19 @@ def build_graph(
 		# get parent node
 		parent_node: Node = directory_nodes[node.parent_dir]
 
-		print(f"\tgot parent node: {parent_node = }")
-
-		# figure out edge type and add it
+		# figure out edge type -- different styles for different categories
 		edge_type: str
 		if parent_node.is_module() and node.is_module():
 			edge_type = "module_hierarchy"
 		else:
 			edge_type = "hierarchy"
+
+		# add edge to graph
 		G.add_edge(parent_node, node, **edge_config[edge_type])
 
+	# get python files
+	# --------------------------------------------------
+	python_files: list[str] = get_python_files(root)
 	print(f"{python_files = }")
 
 	# add files nodes and heirarchy edges to folders
@@ -260,7 +262,7 @@ def build_graph(
 	for python_file in python_files:
 		node: Node
 		# special handling for init files
-		is_init: bool = python_file.endswith("__init__.py")
+		is_init: bool = python_file.endswith("__init__.py") or python_file == "."
 		if is_init:
 			node = directory_nodes[os.path.dirname(python_file) or "."]
 		else:
@@ -289,7 +291,7 @@ def build_graph(
 	
 	# add import edges
 	# --------------------------------------------------
-	if not only_heirarchy:
+	if include_local_imports:
 		nodes_to_add: list[dict] = []
 		edges_to_add: list[dict] = []
 		for node_name in G.nodes:
@@ -475,12 +477,8 @@ def main(
 	global ROOT
 	ROOT = root
 
-	print("# getting python files...")
-	python_files: list[str] = get_python_files()
-	print(f"\t found {len(python_files)} python files")
-
 	print("# building graph...")
-	G: nx.MultiDiGraph = build_graph(python_files)
+	G: nx.MultiDiGraph = build_graph(root=root)
 	print(f"\t built graph with {len(G.nodes)} nodes and {len(G.edges)} edges")
 
 	# change back to original directory
