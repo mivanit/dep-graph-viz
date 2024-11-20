@@ -162,8 +162,6 @@ class Node:
 			parent_dir=parent_dir,
 		)
 
-		print(repr(node))
-
 		return node
 
 	def is_root(self) -> bool:
@@ -232,8 +230,6 @@ def build_graph(
 	for node in directory_nodes.values():
 		add_node(G, node)
 	
-	print(f"{directory_nodes = }")
-
 	# add folder hierarchy edges
 	# --------------------------------------------------
 	for directory, node in directory_nodes.items():
@@ -257,7 +253,6 @@ def build_graph(
 	# get python files
 	# --------------------------------------------------
 	python_files: list[str] = get_python_files(root)
-	print(f"{python_files = }")
 
 	# add files nodes and heirarchy edges to folders
 	# --------------------------------------------------
@@ -295,7 +290,6 @@ def build_graph(
 						node,
 						**edge_config["hierarchy"],
 					)
-					print(f"\tgot parent node: {module_parent = }")
 	
 	# add import edges
 	# --------------------------------------------------
@@ -309,7 +303,6 @@ def build_graph(
 			else:
 				raise ValueError(f"unknown node type: {node_key = }, {type(node_key) = }")
 			
-			print(f"    processing edges: {node.display_name = }")
 			# Read source code
 			node_path: str = node.orig_path
 			if os.path.isdir(node_path):
@@ -327,7 +320,6 @@ def build_graph(
 				# Convert import to module name
 				imported_module_name = imported_module
 
-				print(f"\tgot imported module: {imported_module_name = }")
 
 				if CONFIG["graph"]["strip_module_prefix"]:
 					imported_module_name = imported_module_name.removeprefix(package_name).removeprefix(".")
@@ -348,7 +340,6 @@ def build_graph(
 							v_for_edge=node,
 							**edge_config[edge_type],
 						))
-						print(f"\t    got imported NODE:   {imported_module_name = }")
 				else:
 					# assume external module
 					if CONFIG["graph"]["include_externals"]:
@@ -368,9 +359,6 @@ def build_graph(
 		
 		for x in edges_to_add:
 			G.add_edge(**x)
-
-		print(G.nodes)
-		print(G.edges)
 
 	return G
 

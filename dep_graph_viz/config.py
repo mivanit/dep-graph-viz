@@ -21,7 +21,7 @@ _DEFAULT_CONFIG: dict = {
 		},
 		"hierarchy": {
 			"color": "black",
-			"penwidth": "3",
+			"penwidth": "2",
 			"style": "solid",
 		},
 		"uses": {
