@@ -35,7 +35,7 @@ NodeType = Literal[
 
 def augment_module_name(module_name: str) -> str:
 	"augment module name with prefix if not stripping"
-	if CONFIG["graph"]["strip_module_prefix"] or module_name in (".", ROOT_NODE_NAME):
+	if CONFIG["graph"]["strip_module_prefix"] or module_name in (".", "ROOT"):
 		return module_name
 	else:
 		return f"{PACKAGE_NAME}.{module_name}"
@@ -146,11 +146,15 @@ class Node:
 			parent_dir = "."
 
 		# unique display name
-		display_name: str = (
-			augment_module_name(path_to_module(rel_path))
-			if node_type.startswith("module")
-			else rel_path
-		)
+		display_name: str
+		if node_type.startswith("module"):
+			display_name = path_to_module(rel_path)
+			# special case for when there is a file/module with the same name as the package
+			if node_type != "module_root":
+				display_name = augment_module_name(display_name)
+		else:
+			display_name = rel_path
+
 		aliases.add(display_name)
 		if node_type in {"module_root", "root"}:
 			display_name = ROOT_NODE_NAME
