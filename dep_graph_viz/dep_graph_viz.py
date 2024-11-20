@@ -1,3 +1,4 @@
+from copy import deepcopy
 import json
 import os
 import subprocess
@@ -172,7 +173,7 @@ class Node:
 		return self.node_type.startswith("module")
 
 	def get_rank(self) -> int:
-		return self.rel_path.count("/") + 10 if not self.is_root() else 10
+		return self.rel_path.count("/") + 11 if not self.is_root() else 10
 
 	def __hash__(self) -> int:
 		return hash(self.rel_path)
@@ -189,7 +190,7 @@ class Node:
 			return f'"{self.display_name}"'
 
 	def __repr__(self) -> str:
-		return self.__str__()
+		# return self.__str__()
 		kwargs: str = ", ".join(
 			[
 				(
@@ -200,10 +201,10 @@ class Node:
 				for k in (
 					"display_name",
 					"node_type",
-					"rel_path",
-					"orig_path",
-					"aliases",
-					"parent_dir",
+					# "rel_path",
+					# "orig_path",
+					# "aliases",
+					# "parent_dir",
 				)
 			]
 		)
@@ -230,6 +231,8 @@ def build_graph(
 	}
 	for node in directory_nodes.values():
 		add_node(G, node)
+	
+	print(f"{directory_nodes = }")
 
 	# add folder hierarchy edges
 	# --------------------------------------------------
@@ -269,23 +272,28 @@ def build_graph(
 			node = Node.get_node(python_file)
 			add_node(G, node)
 
+		# this will add the directory node if it doesn't exist
 		nodes_dict[node.display_name] = node
 
 		# add file hierarchy
-		if node.node_type not in {"root", "module_root"} and not is_init:
-			parents: list[str] = [
-				parent_node.display_name
-				for parent_node in directory_nodes.values()
-				if node.parent_dir == parent_node.rel_path
-			]
-			if parents:
-				assert (
-					len(parents) == 1
-				), f"multiple parents found for {node.path}: {parents}"
-				module_parent: str = sorted(parents, key=len)[-1]
-				if edge_config["hierarchy"]:
+		if edge_config["hierarchy"]:
+			if node.node_type not in {"root", "module_root"} and not is_init:
+				parents: list[str] = [
+					parent_node.display_name
+					for parent_node in directory_nodes.values()
+					if node.parent_dir == parent_node.rel_path
+				]
+				if parents:
+					assert (
+						len(parents) == 1
+					), f"multiple parents found for {node.orig_path = }: {parents}"
+					module_parent: str = sorted(parents, key=len)[-1]
+					if module_parent == "ROOT":
+						module_parent = "."
 					G.add_edge(
-						module_parent, node.display_name, **edge_config["hierarchy"]
+						directory_nodes[module_parent],
+						node,
+						**edge_config["hierarchy"],
 					)
 					print(f"\tgot parent node: {module_parent = }")
 	
@@ -294,14 +302,12 @@ def build_graph(
 	if include_local_imports:
 		nodes_to_add: list[dict] = []
 		edges_to_add: list[dict] = []
-		for node_name in G.nodes:
+		for node_key in G.nodes:
 			node: Node
-			if isinstance(node_name, Node):
-				node = node_name
-			elif isinstance(node_name, str):
-				node = nodes_dict[node_name]
+			if isinstance(node_key, Node):
+				node = node_key
 			else:
-				raise ValueError(f"unknown node type: {node_name = }, {type(node_name) = }")
+				raise ValueError(f"unknown node type: {node_key = }, {type(node_key) = }")
 			
 			print(f"    processing edges: {node.display_name = }")
 			# Read source code
@@ -323,14 +329,14 @@ def build_graph(
 
 				print(f"\tgot imported module: {imported_module_name = }")
 
-				if CONFIG["strip_module_prefix"]:
+				if CONFIG["graph"]["strip_module_prefix"]:
 					imported_module_name = imported_module_name.removeprefix(package_name).removeprefix(".")
 					if not imported_module_name:
 						# if empty string, it means we are looking for the root
 						imported_module_name = "ROOT"
 
 
-				if imported_module_name in G:
+				if imported_module_name in nodes_dict:
 					edge_type = (
 						"inits"
 						if classify_node(node_path, root) == "module_dir"
@@ -338,14 +344,14 @@ def build_graph(
 					)
 					if edge_config.get(edge_type):
 						edges_to_add.append(dict(
-							u_for_edge=imported_module_name,
-							v_for_edge=node.display_name,
+							u_for_edge=nodes_dict[imported_module_name],
+							v_for_edge=node,
 							**edge_config[edge_type],
 						))
 						print(f"\t    got imported NODE:   {imported_module_name = }")
 				else:
 					# assume external module
-					if CONFIG["include_externals"]:
+					if CONFIG["graph"]["include_externals"]:
 						nodes_to_add.append(dict(
 							node_for_adding=imported_module_name,
 							rank=0, # for ranking/ordering of the nodes
@@ -353,7 +359,7 @@ def build_graph(
 						))
 						edges_to_add.append(dict(
 							u_for_edge=imported_module_name,
-							v_for_edge=node.display_name,
+							v_for_edge=node,
 							**edge_config["external"],
 						))
 
@@ -478,7 +484,7 @@ def main(
 	ROOT = root
 
 	print("# building graph...")
-	G: nx.MultiDiGraph = build_graph(root=root)
+	G: nx.MultiDiGraph = build_graph(root=".") # pass "." since we just moved to the root directory
 	print(f"\t built graph with {len(G.nodes)} nodes and {len(G.edges)} edges")
 
 	# change back to original directory

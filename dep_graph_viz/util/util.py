@@ -45,6 +45,7 @@ def get_python_files(root: str = ".") -> list[str]:
 def get_relevant_directories(root: str = ".") -> set[str]:
 	"from a root, get a set of all directories with python files in them"
 	if not os.path.exists(root):
+		print(os.getcwd())
 		raise FileNotFoundError(f"root directory not found: '{root}'")
 
 	# get all directories with python files
