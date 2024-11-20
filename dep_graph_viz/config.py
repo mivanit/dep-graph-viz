@@ -78,12 +78,10 @@ _DEFAULT_CONFIG: dict = {
 	},
 }
 
-CONFIG: dict[str, Any] = deepcopy(_DEFAULT_CONFIG)
-
 NULL_STRINGS: set[str] = {"none", "null"}
 
 
-def _process_config(root: str | None = ".", config: dict | None = None) -> None:
+def _process_config(config: dict, root: str | None = ".") -> None:
 	"""converts none types, auto-detects url_prefix from git if needed
 
 	- mapping null values: in CONFIG, a value under the `CONFIG["edge"]` or `CONFIG["node"]` dicts that matches `NULL_STRINGS` will be converted to `None`
@@ -102,9 +100,6 @@ def _process_config(root: str | None = ".", config: dict | None = None) -> None:
 	 - `CONFIG["edge"][*]` and `CONFIG["node"][*]` which match `NULL_STRINGS` will be converted to `None`
 	 - `CONFIG["url_prefix"]` will be set to a formatted URL if it is `None` and `CONFIG["auto_url_format"]` is not `None`
 	"""
-	if config is None:
-		global CONFIG
-		config = CONFIG
 
 	# convert none/null items
 	for k_conv in ("edge", "node"):

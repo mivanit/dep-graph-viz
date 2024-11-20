@@ -10,7 +10,7 @@ import pydot
 from muutils.dictmagic import kwargs_to_nested_dict, update_with_nested_dict
 from networkx.drawing.nx_pydot import to_pydot
 
-from dep_graph_viz.config import CONFIG, _process_config
+from dep_graph_viz.config import _process_config
 from dep_graph_viz.util.paths import get_module_directory, get_package_repository_url, normalize_path, path_to_module
 from dep_graph_viz.util.util import (
 	get_imports,
@@ -230,10 +230,14 @@ class Node:
 
 
 def build_graph(
-	root: str = ".",
-	include_local_imports: bool = CONFIG["graph"]["include_local_imports"],
-	edge_config: dict[str, Any] = CONFIG["edge"],
+	root: str,
+	config: dict,
 ) -> nx.MultiDiGraph:
+	# process config
+	# --------------------------------------------------
+	include_local_imports: bool = config["graph"]["include_local_imports"],
+	edge_config: dict[str, Any] = config["edge"],
+
 	# create graph, get dirs and package name
 	# --------------------------------------------------
 	G: nx.MultiDiGraph = nx.MultiDiGraph()
@@ -578,7 +582,8 @@ def main(
 
 	print("# building graph...")
 	G: nx.MultiDiGraph = build_graph(
-		root="."
+		root=".",
+		config = CONFIG,
 	)  # pass "." since we just moved to the root directory
 	print(f"\t built graph with {len(G.nodes)} nodes and {len(G.edges)} edges")
 

@@ -3,19 +3,11 @@ from copy import deepcopy
 import subprocess
 from unittest.mock import patch
 
-from dep_graph_viz.config import CONFIG, _process_config, NULL_STRINGS
-
-
-@pytest.fixture(autouse=True)
-def reset_config():
-	"""Reset the CONFIG dictionary to its default state before each test."""
-	global CONFIG
-	original_config = deepcopy(CONFIG)
-	yield
-	CONFIG = deepcopy(original_config)
+from dep_graph_viz.config import _DEFAULT_CONFIG, _process_config, NULL_STRINGS
 
 
 def test_process_config_convert_none():
+	CONFIG = deepcopy(_DEFAULT_CONFIG)
 	CONFIG["edge"]["thing"] = {"color": "none", "style": "dashed"}
 	CONFIG["node"]["otherthing"] = {"shape": "null", "label": "Node"}
 
@@ -28,27 +20,30 @@ def test_process_config_convert_none():
 
 
 def test_process_config_no_auto_url_format():
+	CONFIG = deepcopy(_DEFAULT_CONFIG)
 	CONFIG["url_prefix"] = None
 	CONFIG["auto_url_format"] = None
 
-	_process_config()
+	_process_config(CONFIG)
 
 	assert CONFIG["url_prefix"] is None
 
 
 def test_process_config_root_none():
+	CONFIG = deepcopy(_DEFAULT_CONFIG)
 	CONFIG["url_prefix"] = None
 	CONFIG["auto_url_format"] = "{git_remote_url}/blob/{git_branch}/"
 
-	_process_config(root=None)
+	_process_config(CONFIG, root=None)
 
 	assert CONFIG["url_prefix"] is None
 
 
 def test_process_config_preserve_url_prefix():
+	CONFIG = deepcopy(_DEFAULT_CONFIG)
 	CONFIG["url_prefix"] = "https://example.com/repo/"
 
-	_process_config()
+	_process_config(CONFIG)
 
 	assert CONFIG["url_prefix"] == "https://example.com/repo/"
 
@@ -203,7 +198,7 @@ def test_process_config_url_generation(
 	url_prefix, auto_url_format, root, git_remote, git_branch, expected_url
 ):
 	"""Test URL generation with different configurations"""
-	test_config = deepcopy(CONFIG)
+	test_config = deepcopy(_DEFAULT_CONFIG)
 	test_config["url_prefix"] = url_prefix
 	test_config["auto_url_format"] = auto_url_format
 
@@ -241,7 +236,7 @@ def test_process_config_url_generation(
 )
 def test_process_config_url_replacement(auto_url_replace, git_remote, expected_url):
 	"""Test URL replacement patterns"""
-	test_config = deepcopy(CONFIG)
+	test_config = deepcopy(_DEFAULT_CONFIG)
 	test_config["url_prefix"] = None
 	test_config["auto_url_format"] = "{git_remote_url}/blob/{git_branch}/"
 	test_config["auto_url_replace"] = auto_url_replace
@@ -255,7 +250,7 @@ def test_process_config_url_replacement(auto_url_replace, git_remote, expected_u
 
 def test_process_config_git_error_handling():
 	"""Test handling of git command errors"""
-	test_config = deepcopy(CONFIG)
+	test_config = deepcopy(_DEFAULT_CONFIG)
 	test_config["url_prefix"] = None
 	test_config["auto_url_format"] = "{git_remote_url}/blob/{git_branch}/"
 
@@ -276,7 +271,7 @@ def test_process_config_git_error_handling():
 )
 def test_process_config_directory_handling(cwd, root, expected_cwd_after):
 	"""Test directory changes during git operations"""
-	test_config = deepcopy(CONFIG)
+	test_config = deepcopy(_DEFAULT_CONFIG)
 	test_config["url_prefix"] = None
 	test_config["auto_url_format"] = "{git_remote_url}/blob/{git_branch}/"
 
@@ -297,7 +292,7 @@ def test_process_config_directory_handling(cwd, root, expected_cwd_after):
 @pytest.mark.parametrize("null_value", NULL_STRINGS)
 def test_null_strings_consistency(null_value):
 	"""Test that all null string values are properly recognized"""
-	test_config = deepcopy(CONFIG)
+	test_config = deepcopy(_DEFAULT_CONFIG)
 	test_config["edge"]["test"] = {"color": null_value}
 	test_config["node"]["test"] = {"shape": null_value}
 
@@ -309,8 +304,9 @@ def test_null_strings_consistency(null_value):
 
 def test_config_immutability():
 	"""Test that original config is not modified when using a custom config"""
-	original_config = deepcopy(CONFIG)
-	test_config = deepcopy(CONFIG)
+	CONFIG = deepcopy(_DEFAULT_CONFIG)
+	original_config = deepcopy(_DEFAULT_CONFIG)
+	test_config = deepcopy(_DEFAULT_CONFIG)
 	test_config["edge"]["custom"] = {"color": "none"}
 
 	_process_config(root=None, config=test_config)
