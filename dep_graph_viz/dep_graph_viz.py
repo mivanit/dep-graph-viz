@@ -331,7 +331,7 @@ def build_graph(
 				if imported_module_name in nodes_dict:
 					edge_type = (
 						"inits"
-						if classify_node(node_path, root) == "module_dir"
+						if node_path.endswith("__init__.py")
 						else "uses"
 					)
 					if edge_config.get(edge_type):
