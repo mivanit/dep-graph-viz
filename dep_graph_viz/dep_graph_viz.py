@@ -21,6 +21,9 @@ ORIG_DIR: str = os.getcwd()
 # *absolute* path of the root directory
 ROOT: str | None = None
 
+PACKAGE_NAME: str
+ROOT_NODE_NAME: str = "ROOT"
+
 NodeType = Literal[
 	"module_root",  # root if __init__.py is present
 	"root",  # root if no __init__.py
@@ -29,6 +32,13 @@ NodeType = Literal[
 	"module_file",  # file in a module (in a directory with __init__.py)
 	"script",  # standalone file (in a directory without __init__.py)
 ]
+
+def augment_module_name(module_name: str) -> str:
+	"augment module name with prefix if not stripping"
+	if CONFIG["graph"]["strip_module_prefix"] or module_name in (".", ROOT_NODE_NAME):
+		return module_name
+	else:
+		return f"{PACKAGE_NAME}.{module_name}"
 
 
 def add_node(G: nx.MultiDiGraph, node: "Node") -> None:
@@ -137,11 +147,13 @@ class Node:
 
 		# unique display name
 		display_name: str = (
-			path_to_module(rel_path) if node_type.startswith("module") else rel_path
+			augment_module_name(path_to_module(rel_path))
+			if node_type.startswith("module")
+			else rel_path
 		)
 		aliases.add(display_name)
 		if node_type in {"module_root", "root"}:
-			display_name = "ROOT"
+			display_name = ROOT_NODE_NAME
 			parent_dir = None
 			aliases.add(display_name)
 
@@ -182,7 +194,7 @@ class Node:
 			return (
 				f'"{CONFIG["git_remote_url"]}"'
 				if CONFIG.get("git_remote_url")
-				else '"ROOT"'
+				else ROOT_NODE_NAME
 			)
 		else:
 			return f'"{self.display_name}"'
@@ -219,11 +231,12 @@ def build_graph(
 	G: nx.MultiDiGraph = nx.MultiDiGraph()
 	directories: set[str] = get_relevant_directories(root)
 	package_name: str = os.path.basename(os.path.abspath(root))
+	assert package_name == PACKAGE_NAME
 
 	# Add nodes for directories and root
 	# --------------------------------------------------
 	directory_nodes: dict[str, Node] = {
-		directory: Node.get_node(directory) for directory in directories
+		augment_module_name(directory): Node.get_node(directory) for directory in directories
 	}
 	for node in directory_nodes.values():
 		add_node(G, node)
@@ -260,7 +273,7 @@ def build_graph(
 		# special handling for init files
 		is_init: bool = python_file.endswith("__init__.py") or python_file == "."
 		if is_init:
-			node = directory_nodes[os.path.dirname(python_file) or "."]
+			node = directory_nodes[augment_module_name(os.path.dirname(python_file) or ".")]
 		else:
 			node = Node.get_node(python_file)
 			add_node(G, node)
@@ -281,7 +294,7 @@ def build_graph(
 						len(parents) == 1
 					), f"multiple parents found for {node.orig_path = }: {parents}"
 					module_parent: str = sorted(parents, key=len)[-1]
-					if module_parent == "ROOT":
+					if module_parent == ROOT_NODE_NAME:
 						module_parent = "."
 					G.add_edge(
 						directory_nodes[module_parent],
@@ -326,7 +339,7 @@ def build_graph(
 					).removeprefix(".")
 					if not imported_module_name:
 						# if empty string, it means we are looking for the root
-						imported_module_name = "ROOT"
+						imported_module_name = ROOT_NODE_NAME
 
 				if imported_module_name in nodes_dict:
 					edge_type = (
@@ -442,6 +455,9 @@ def main(
 
 	"""
 
+	# handle kwargs and config
+	# --------------------------------------------------
+
 	# update config from file if given
 	if config_file is not None:
 		with open(config_file, "r", encoding="utf-8") as f:
@@ -473,6 +489,19 @@ def main(
 
 	if root is None:
 		raise ValueError("root is required")
+	
+	# set up some other globals
+	# --------------------------------------------------
+
+	# get global package name, set root node name if needed
+	global PACKAGE_NAME
+	global ROOT_NODE_NAME
+	PACKAGE_NAME = os.path.basename(os.path.abspath(root))
+	if not CONFIG["graph"]["strip_module_prefix"]:
+		ROOT_NODE_NAME = PACKAGE_NAME
+	
+	# move directory, build graph, move back
+	# --------------------------------------------------
 
 	# change directory
 	os.chdir(root)
@@ -487,16 +516,24 @@ def main(
 
 	# change back to original directory
 	os.chdir(ORIG_DIR)
+
+
+	# output
+	# --------------------------------------------------
+
+	# write the dot file first
 	output_file_dot: str = f"{output}.dot"
 	print(f"# writing dot file: {output_file_dot}")
 	write_dot(G, f"{output_file_dot}")
 
 	if output_fmt == "html":
+		# if HTML, generate it and put the dotfile contents inline
 		print("# generating html...")
 		from dep_graph_viz.html import generate_html
 
 		generate_html(output_file_dot, f"{output}.html")
 	else:
+		# otherwise, run dot/graphviz and convert to desired format
 		print("# running dot...")
 		print("\tcommand:")
 		cmd: str = f"dot -T{output_fmt} {output_file_dot} -o {output}.{output_fmt} {'-v' if verbose else ''}"
