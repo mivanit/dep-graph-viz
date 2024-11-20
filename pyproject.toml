@@ -1,5 +1,5 @@
 [project]
-name = "dep-graph-viz"
+name = "dep_graph_viz"
 version = "0.1.0"
 description = "visualize a dependency graph for a python library"
 authors = [
