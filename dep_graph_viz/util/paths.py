@@ -144,11 +144,14 @@ def get_package_repository_url(package_name: str) -> str|None:
     
     # Check project_urls first
     if "project_urls" in metadata:
-        urls = json.loads(metadata["project_urls"])
-        repo_keys = ["Repository", "Source", "Code", "Source Code", "Homepage"]
-        for key in repo_keys:
-            if key in urls:
-                return urls[key]
+        try:
+            urls = json.loads(metadata["project_urls"])
+            repo_keys = ["Repository", "Source", "Code", "Source Code", "Homepage"]
+            for key in repo_keys:
+                if key in urls:
+                    return urls[key]
+        except:
+            pass
     
     # Try home_page
     if "home-page" in metadata:

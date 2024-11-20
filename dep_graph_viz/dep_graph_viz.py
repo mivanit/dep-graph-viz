@@ -165,8 +165,11 @@ class Node:
 		# get url if needed
 		url: str | None = None
 		url_prefix: str = CONFIG["url_prefix"]
-		if url_prefix:
+		if url_prefix is not None:
 			url = f"{url_prefix}{rel_path}"
+			if CONFIG.get("auto_url_replace", None):
+				for k, v in CONFIG["auto_url_replace"].items():
+					url = url.replace(k, v)
 
 		# assemble and return node
 		node: Node = Node(
@@ -509,10 +512,10 @@ def main(
 
 	# handle module vs explicit path
 	if root is None:
-		assert module is not None, "either root or module must be given"
+		assert module is not None, f"either root or module must be given, got values for both: {root = }, {module = }"
 		root = get_module_directory(module)
-	elif module is not None:
-		pass
+	elif module is None:
+		assert root is not None, f"either root or module must be given, got values for both: {root = }, {module = }"
 	else:
 		raise ValueError("either root or module must be given, got `None` for both")
 	
@@ -533,8 +536,8 @@ def main(
 
 	# process by converting none types, auto-detecting url_prefix from git if needed
 	# special config processing: if we are doing a module, then we try to get the url prefix from there
-	url_prefix: str | None = CONFIG["url_prefix"]
-	if module is not None and url_prefix is None:
+	url_prefix: str | None = None
+	if module is not None and CONFIG["url_prefix"] is None:
 		url_prefix = get_package_repository_url(module)
 	_process_config(root=root)
 	if url_prefix is not None:

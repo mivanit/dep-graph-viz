@@ -240,7 +240,7 @@ def test_nested_modules() -> None:
         assert os.path.isdir(path)
         assert os.path.exists(os.path.join(path, "__init__.py"))
 
-def test_return_type() -> None:
+def test_return_type_get_module_directory() -> None:
     """Test that the function returns a string"""
     path = get_module_directory('json')
     assert isinstance(path, str)
@@ -372,7 +372,7 @@ def test_different_metadata_formats(package_name: str, metadata: dict, expected:
         url = get_package_repository_url(package_name)
         assert url == expected
 
-def test_return_type():
+def test_return_type_get_package_repository_url():
     """Test return type is either str or None"""
     try:
         url = get_package_repository_url(KNOWN_PACKAGES[0])
@@ -384,7 +384,7 @@ def test_invalid_project_urls():
     """Test handling of invalid project_urls JSON"""
     mock_metadata = MagicMock()
     mock_metadata.__contains__.return_value = True
-    mock_metadata.__getitem__.return_value = "not valid json"
+    mock_metadata.__getitem__.return_value = None
 
     with patch('importlib.metadata.metadata', return_value=mock_metadata):
         url = get_package_repository_url("test-package")
